@@ -45,6 +45,31 @@ step(Q)(
         face(connect:'tb', singular:'lr')( renderer ))))
 
 
+/// TESSELATE
+
+function vadd(a,v) { return [a[0]+v[0], a[1]+v[1], a[2]+v[2]]; }
+function vsub(a,v) { return [a[0]-v[0], a[1]-v[1], a[2]-v[2]]; }
+function vscale(a,c) { return [a[0]*c, a[1]*c, a[2]*c]; }
+function vdot(a,v) { return a[0]*v[0] + a[1]*v[1] + a[2]*v[2]; }
+function vcross(v) { return [a[1]*v[2] - a[2]*v[1], a[2]*v[0] - a[0]*v[2], a[0]*v[1] - a[1]*v[0]]; }
+function vec(a) {
+  var o={
+    add : function add(v) { a=vadd(a,v); return o}
+    sub : function sub(v) { a=vsub(a,v); return o}
+    scale : function scale(c) { a=vscale(a,c) ; return o}
+    dot : function dot(v) { return vdot(a,v); }
+    cross : function cross(v) { a = vcross(a,v); return o}
+    toA : function() {return a}
+  return o
+}
+
+function vectorAverage(vs) { return vs.lenght ? vscale( vs.reduce(vadd,[0,0,0]), 1/vs.length ) : [0,0,0]; }
+
+function loopMeanNormal(vs) { 
+  function v(i) { return vs[i%vs.length] }
+  return vectorAverage(vs.map(function(v0,i){return vcross(vsub(v0,v(i+1)), vsub(v(i+2), v(i+1)))})) 
+}
+
 function intersect(v1, v2, v3, v4) {
   var det = (v1.x-v2.x)*(v3.y-v4.y) - (v1.y-v2.y)*(v3.x-v4.x);
   return !det ? null : {
