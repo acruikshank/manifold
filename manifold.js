@@ -52,16 +52,8 @@ function vsub(a,v) { return [a[0]-v[0], a[1]-v[1], a[2]-v[2]]; }
 function vscale(a,c) { return [a[0]*c, a[1]*c, a[2]*c]; }
 function vdot(a,v) { return a[0]*v[0] + a[1]*v[1] + a[2]*v[2]; }
 function vcross(v) { return [a[1]*v[2] - a[2]*v[1], a[2]*v[0] - a[0]*v[2], a[0]*v[1] - a[1]*v[0]]; }
-function vec(a) {
-  var o={
-    add : function add(v) { a=vadd(a,v); return o}
-    sub : function sub(v) { a=vsub(a,v); return o}
-    scale : function scale(c) { a=vscale(a,c) ; return o}
-    dot : function dot(v) { return vdot(a,v); }
-    cross : function cross(v) { a = vcross(a,v); return o}
-    toA : function() {return a}
-  return o
-}
+function vlength(v) { return Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]); }
+function vnorm(v) { var l=vlength(v); return v > 0 ? [v[0]/l, v[1]/l, v[2]/l] : v; }
 
 function vectorAverage(vs) { return vs.lenght ? vscale( vs.reduce(vadd,[0,0,0]), 1/vs.length ) : [0,0,0]; }
 
@@ -93,11 +85,31 @@ function isSelfIntersecting( p1, p2, vertices ) {
   return false;
 }
 
-function tesselate3d() {
+function projectIntoPlane( p, planePoint, planeNormal ) {
+  // p - pp - (((p-pp) . pn) * pn)
+  var pTranslated = vsub( p, planePoint );
+  return vsub( pTranslated, vscale( planeNormal, vdot( pTranslated, planeNormal )))
+}
+
+function tesselate3d( points3d, faceSink ) {
+  var planeNormal = vnorm(loopMeanNormal(points3d));
+  var planePoint = vectorAverage(points3d);
+
+  var offNormal = vadd( planePoint, Math.abs(planeNormal[0] < .5) ? [1,0,0] : [0,1,0] );
+  var axis1 = vnorm(projectIntoPlane(offNormal ,planePoint, planeNormal));
+  var axis2 = vcross( axis1, planeNormal );
   // first find the mean plane by finding the mean point of all the vertices, then finding the mean normal
   // by averaging the cross-product of every 3 consecutive vertices. Then project each vertex onto this plane.
   // These should be passed to tesslateVertices, and the faceSink should be wrapped to return the original 3d
   // vertex.
+
+  // PROJECT:
+  // ap = the average point
+  // an = the average normal
+  // projected = p + ((p-ap) . an) for p in points
+  // u1 = norm(projected[0]-ap) // or the first point != ap
+  // u2 = norm(u1 X an)
+  // flattend = [p . u1, p . u2] for p in projected
 }
 
 function tesselateVertices(vertices, faceSink) {
