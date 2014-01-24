@@ -25,7 +25,7 @@ var renderer = ThreeJSRenderer();
 
 // cube
 step(2)(
-  vertices([[1,1],[-1,1],[-1,-1],[1,-1]])(
+  vertices([[1,1,0],[-1,1,0],[-1,-1,0],[1,-1,0]])(
   transform(zTranslate(1), label) (
   face( edgeLoop, tesselate('bottom'), tesselate('top',true) )( renderer ))))
 
@@ -40,10 +40,36 @@ function simiCircle(s) {return [R*Math.cos(tween(s,-hPI,hPI)),0,R*Math.sin(tween
 
 step(Q)(
   step(Q)(
-    vertices(semiCircle))(
+    parametric(semiCircle))(
       zRotate()(
         face(connect:'tb', singular:'lr')( renderer ))))
 
+// STEP
+function step(iterations) {
+  return function(stepSink) {
+    for (var i=0; i < iterations; i++) stepSink( i / (iterations - 1) );
+  }
+}
+
+// VERTICES
+function vertices(points) {
+  return function(vertexSink) {
+    return function(step) {
+      for (var i=0,p; p=points[i]; i++)
+        vertexSink(p, step, i / (points.length-1));
+    }
+  }
+}
+
+function parametric(f) {
+  return function(vertexSink) {
+    return function( ribStep ) {
+      return function( transformStep ) {
+        vertexSink( f(ribStep, transformStep), transformStep, ribStep );
+      }
+    }
+  }
+}
 
 /// TESSELATE
 
@@ -55,7 +81,7 @@ function vcross(v) { return [a[1]*v[2] - a[2]*v[1], a[2]*v[0] - a[0]*v[2], a[0]*
 function vlength(v) { return Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]); }
 function vnorm(v) { var l=vlength(v); return v > 0 ? [v[0]/l, v[1]/l, v[2]/l] : v; }
 
-function vectorAverage(vs) { return vs.lenght ? vscale( vs.reduce(vadd,[0,0,0]), 1/vs.length ) : [0,0,0]; }
+function vectorAverage(vs) { return vs.length ? vscale( vs.reduce(vadd,[0,0,0]), 1/vs.length ) : [0,0,0]; }
 
 function loopMeanNormal(vs) { 
   function v(i) { return vs[i%vs.length] }
