@@ -98,18 +98,15 @@ function tesselate3d( points3d, faceSink ) {
   var offNormal = vadd( planePoint, Math.abs(planeNormal[0] < .5) ? [1,0,0] : [0,1,0] );
   var axis1 = vnorm(projectIntoPlane(offNormal ,planePoint, planeNormal));
   var axis2 = vcross( axis1, planeNormal );
-  // first find the mean plane by finding the mean point of all the vertices, then finding the mean normal
-  // by averaging the cross-product of every 3 consecutive vertices. Then project each vertex onto this plane.
-  // These should be passed to tesslateVertices, and the faceSink should be wrapped to return the original 3d
-  // vertex.
 
-  // PROJECT:
-  // ap = the average point
-  // an = the average normal
-  // projected = p + ((p-ap) . an) for p in points
-  // u1 = norm(projected[0]-ap) // or the first point != ap
-  // u2 = norm(u1 X an)
-  // flattend = [p . u1, p . u2] for p in projected
+  var vertices2d = points3d.map( function(p) {
+    var pointInPlane = projectIntoPlane(p, planePoint, planeNormal);
+    return [vdot(pointInPlane,axis1), vdot(pointInPlane,axis2)];
+  })
+
+  tesslateVertices( vertices2d, function(face) {
+    faceSink(face);
+  })
 }
 
 function tesselateVertices(vertices, faceSink) {
