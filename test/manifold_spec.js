@@ -45,4 +45,21 @@ describe( 'math:', function() {
     expect( M.vdot(a,c) ).to.be.within(-.0001, .0001);
     expect( M.vdot(b,c) ).to.be.within(-.0001, .0001);
   })
+
+  it('The length of a normal is one', function() {
+    var a = [3.2389, 4.23342, 9.84394];
+    var b = [-22.3829, 6.34834, 6.43834];
+    expect( M.vlength( M.vnorm(a) ) ).to.within(.999999, 1.000001)    
+    expect( M.vlength( M.vnorm(b) ) ).to.within(.999999, 1.000001)    
+  })
+
+  it('norm(a) * |a| == a', function() {
+    var a = [3.2389, 4.23342, 9.84394];
+    var aNorm = M.vnorm(a)
+    var b = [-22.3829, 6.34834, 6.43834];
+    var bNorm = M.vnorm(b)
+    expect( M.vscale(aNorm, M.vlength(a)) ).to.be.nearTo(a);
+    expect( M.vscale(bNorm, M.vlength(b)) ).to.be.nearTo(b);
+  })
+
 })
