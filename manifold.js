@@ -20,6 +20,11 @@ Renderer: * -> FaceSink
   NativeRenderer
 */
 
+var context = typeof window != 'undefined' ? window : exports;
+
+context.math = {vadd:vadd, vsub:vsub, vscale:vscale, vdot:vdot, vcross: vcross, vlength:vlength, vnorm:vnorm}
+
+/*
 // cube
 var renderer = ThreeJSRenderer();
 
@@ -43,6 +48,7 @@ step(Q)(
     parametric(semiCircle))(
       zRotate()(
         face(connect:'tb', singular:'lr')( renderer ))))
+*/
 
 // STEP
 function step(iterations) {
@@ -77,7 +83,7 @@ function vadd(a,v) { return [a[0]+v[0], a[1]+v[1], a[2]+v[2]]; }
 function vsub(a,v) { return [a[0]-v[0], a[1]-v[1], a[2]-v[2]]; }
 function vscale(a,c) { return [a[0]*c, a[1]*c, a[2]*c]; }
 function vdot(a,v) { return a[0]*v[0] + a[1]*v[1] + a[2]*v[2]; }
-function vcross(v) { return [a[1]*v[2] - a[2]*v[1], a[2]*v[0] - a[0]*v[2], a[0]*v[1] - a[1]*v[0]]; }
+function vcross(a,v) { return [a[1]*v[2] - a[2]*v[1], a[2]*v[0] - a[0]*v[2], a[0]*v[1] - a[1]*v[0]]; }
 function vlength(v) { return Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]); }
 function vnorm(v) { var l=vlength(v); return v > 0 ? [v[0]/l, v[1]/l, v[2]/l] : v; }
 
