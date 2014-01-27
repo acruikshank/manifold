@@ -6,14 +6,14 @@ StepSource: StepSink ->
 VertexSink: Vertex, Step, Step* ->
 VertexGenerator: VertexSink -> StepSink
   vertices(vertices) // take the given vertices to create a VertexGenerator
-  vertices(f): (Step -> Vertex) -> VertexGenerator // convert a vertex producer into a vertex generator 
+  parametric(f): (Step -> Vertex) -> VertexGenerator // convert a vertex producer into a vertex generator 
 VertexMap: VertexSink -> VertexSink
   zTranslate(start,end): translate vertices along z axis
   zRotate(start*,end*): rotate vertices around z axis
   tag(edges): mark vertices with tags
 Facer: FaceSink -> VertexSink
   face(options): Produce a facer with the given options for tesselating and joining
-Renderer: * -> FaceSink
+Renderer: FaceSink
   ThreeJSRenderer
   CSGRenerer
   STLRenderer
@@ -60,19 +60,34 @@ function step(iterations) {
 // VERTICES
 function vertices(points) {
   return function(vertexSink) {
+    var index = 0;
     return function(step) {
       for (var i=0,p; p=points[i]; i++)
-        vertexSink(p, step, i / (points.length-1));
+        vertexSink(p, step, i / (points.length-1), index++);
     }
   }
 }
 
 function parametric(f) {
   return function(vertexSink) {
+    var index = 0;
     return function( ribStep ) {
       return function( transformStep ) {
-        vertexSink( f(ribStep, transformStep), transformStep, ribStep );
+        vertexSink( f(ribStep, transformStep), transformStep, ribStep, index++);
       }
+    }
+  }
+}
+
+// TRANSFORM
+function translate(translations) {
+  return function( vertexSink ) {
+    return function( vertex, transformStep, ribStep, index) {
+      var tIndex = parseInt(transformStep * (transformations.length-1))
+      var translate = transformStep==1 ? 
+        translations[tIndex] : 
+        vinterp( translations[tIndex], translations[tIndex+1], transformStep-tIndex)
+      vertexSink( vadd(translate,vertex), transformStep, ribStep, index);
     }
   }
 }
@@ -86,6 +101,7 @@ function vdot(a,v) { return a[0]*v[0] + a[1]*v[1] + a[2]*v[2]; }
 function vcross(a,v) { return [a[1]*v[2] - a[2]*v[1], a[2]*v[0] - a[0]*v[2], a[0]*v[1] - a[1]*v[0]]; }
 function vlength(v) { return Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]); }
 function vnorm(v) { var l=vlength(v); return l > 0 ? [v[0]/l, v[1]/l, v[2]/l] : v; }
+function vinterp(a,b,c) { return vadd(a,vscale(vsub(b,a),c)); }
 
 function vectorAverage(vs) { return vs.length ? vscale( vs.reduce(vadd,[0,0,0]), 1/vs.length ) : [0,0,0]; }
 
