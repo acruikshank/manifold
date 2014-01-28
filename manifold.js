@@ -92,6 +92,20 @@ function translate(translations) {
   }
 }
 
+// FACER
+function facer() {
+  return function( faceSink ) {
+    var lastRib;
+    var nextRib = [];
+    return function( vertex, transformStep, ribStep, index ) {
+      if (lastRib) {
+        // figure this out.
+      }
+      nextRib.push([vertex,transformStep,index])
+    }
+  }
+}
+
 /// TESSELATE
 
 function vadd(a,v) { return [a[0]+v[0], a[1]+v[1], a[2]+v[2]]; }
