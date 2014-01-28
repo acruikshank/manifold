@@ -50,6 +50,29 @@ step(Q)(
         face(connect:'tb', singular:'lr')( renderer ))))
 */
 
+function Vertex( point, transformStep, ribStep, id) {
+  this[0] = point[0];
+  this[1] = point[1];
+  this[2] = point[2];
+  this[3] = transformStep;
+  this[4] = ribStep;
+  this[5] = id;
+}
+Vertex.prototype = new Float64Array(6);
+Object.defineProperty(Vertex.prototype, 'x', {get:function() {return this[0]}, set:function(x) {this[0]=x}})
+Object.defineProperty(Vertex.prototype, 'y', {get:function() {return this[1]}, set:function(y) {this[1]=y}})
+Object.defineProperty(Vertex.prototype, 'z', {get:function() {return this[2]}, set:function(z) {this[2]=z}})
+Object.defineProperty(Vertex.prototype, 'transformStep', {
+  get:function() {return this[3]}, 
+  set:function(transformStep) {this[3]=transformStep}})
+Object.defineProperty(Vertex.prototype, 'ribStep', {
+  get:function() {return this[4]}, 
+  set:function(ribStep) {this[4]=ribStep}})
+Object.defineProperty(Vertex.prototype, 'id', {
+  get:function() {return this[5]}, 
+  set:function(id) {this[5]=id}})
+
+
 // STEP
 function step(iterations) {
   return function(stepSink) {
@@ -63,7 +86,7 @@ function vertices(points) {
     var index = 0;
     return function(step) {
       for (var i=0,p; p=points[i]; i++)
-        vertexSink(p, step, i / (points.length-1), index++);
+        vertexSink( new Vertex(p, step, i / (points.length-1), index++) );
     }
   }
 }
@@ -73,7 +96,7 @@ function parametric(f) {
     var index = 0;
     return function( ribStep ) {
       return function( transformStep ) {
-        vertexSink( f(ribStep, transformStep), transformStep, ribStep, index++);
+        vertexSink( new Vertex(f(ribStep, transformStep), transformStep, ribStep, index++) );
       }
     }
   }
@@ -82,12 +105,12 @@ function parametric(f) {
 // TRANSFORM
 function translate(translations) {
   return function( vertexSink ) {
-    return function( vertex, transformStep, ribStep, index) {
-      var tIndex = parseInt(transformStep * (transformations.length-1))
-      var translate = transformStep==1 ? 
+    return function( vertex ) {
+      var tIndex = parseInt(vertex.transformStep * (translations.length-1))
+      var translate = vertex.transformStep==1 ? 
         translations[tIndex] : 
-        vinterp( translations[tIndex], translations[tIndex+1], transformStep-tIndex)
-      vertexSink( vadd(translate,vertex), transformStep, ribStep, index);
+        vinterp( translations[tIndex], translations[tIndex+1], vertex.transformStep-tIndex)
+      vertexSink( new Vertex(vadd(translate,vertex), vertex.transformStep, vertex.ribStep, vertex.id ) );
     }
   }
 }
