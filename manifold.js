@@ -115,21 +115,39 @@ function translate(translations) {
   }
 }
 
-// FACER
+// TESSELATE
 function facer() {
   return function( faceSink ) {
     var lastRib;
     var nextRib = [];
-    return function( vertex, transformStep, ribStep, index ) {
-      if (lastRib) {
-        // figure this out.
+    var bottomVertexIndex = 0;
+    var lastTransformStep = 0;
+    return function( vertex ) {
+      if ( vertex.transformStep > lastTransformStep ) {
+        lastRib = nextRib;
+        lastTransformStep = vertex.transformStep;
       }
+
+      if (lastRib && nextRib.length) {
+        var topLeftVertex = nextRib[nextRib.length-1];
+        var bottomLeftVertex = lastRib[bottomVertexIndex];
+        var bottomRightVertex = lastRib[bottomVertexIndex+1];
+        while ( bottomRightVertex && 
+            vertex.ribStep > bottomLeftVertex.ribStep + (bottomRightVertex.ribStep-bottomLeftVertex.ribStep)/2 ) {
+          faceSink( [bottomLeftVertex, topLeftVertex, bottomRightVertex] );
+          bottomVertexIndex++;
+          bottomLeftVertex = bottomRightVertex;
+          bottomRightVertex = lastRib[bottomVertexIndex+1];
+        }
+        faceSink( [bottomLeftVertex, topLeftVertex, vertex] );
+      }
+
       nextRib.push([vertex,transformStep,index])
     }
   }
 }
 
-/// TESSELATE
+// MATH
 
 function vadd(a,v) { return [a[0]+v[0], a[1]+v[1], a[2]+v[2]]; }
 function vsub(a,v) { return [a[0]-v[0], a[1]-v[1], a[2]-v[2]]; }
