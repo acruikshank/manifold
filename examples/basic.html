@@ -1,0 +1,91 @@
+<html>
+<head>
+<title>Basic Geometry</title>
+  <style>
+    body { background: #fff;}
+  </style>
+  <script src="three.min.js"></script>
+</head>
+<body>
+</body>
+  <script>
+  var camera, scene, renderer;
+  var particleLight1, pointLight1;
+  var particleLight2, pointLight2;
+  var meshes = {};
+  var dragging = false, startMouse;
+
+  renderer = new THREE.WebGLRenderer();
+  renderer.setSize( window.innerWidth, window.innerHeight );
+  renderer.shadowMapEnabled = true;
+  document.body.appendChild( renderer.domElement );
+
+  camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 1, 500 );
+  camera.position.z = 100;
+
+  scene = new THREE.Scene();
+  scene.add( new THREE.AmbientLight( 0x666666 ) );
+
+  var light = new THREE.DirectionalLight(0xffffff);
+  light.position.set(300,-300,300);
+  light.rotation.x = light.rotation.y = light.rotation.z = 0;
+  light.target.position.set(0.0,0.0,0.0);
+  light.target.updateMatrixWorld();
+  scene.add(light);
+
+  renderer.render( scene, camera );    
+  window.addEventListener( 'resize', onWindowResize, false );
+
+  function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+
+    renderer.setSize( window.innerWidth, window.innerHeight );
+  }
+
+  var geometry = new THREE.Geometry();
+
+  geometry.vertices.push( new THREE.Vector3( -10,  10, 0 ) );
+  geometry.vertices.push( new THREE.Vector3( -10, -10, 0 ) );
+  geometry.vertices.push( new THREE.Vector3(  10, -10, 0 ) );
+  geometry.vertices.push( new THREE.Vector3(  -10,   -10, 10 ) );
+
+  geometry.faces.push( new THREE.Face3( 2, 1, 0 ) );
+  geometry.faces.push( new THREE.Face3( 0, 1, 3 ) );
+  geometry.faces.push( new THREE.Face3( 1, 2, 3 ) );
+  geometry.faces.push( new THREE.Face3( 2, 0, 3 ) );
+
+  geometry.computeBoundingSphere();
+  geometry.computeFaceNormals();
+
+
+  var mesh = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial( { color: '#ff0000' } ) );
+  scene.add(mesh);
+
+  function render( ) {
+    renderer.render( scene, camera );    
+  }
+
+  render();
+
+  function mousemove(e) {
+    if (! dragging) return;
+    e.preventDefault(); 
+    var xRotation = -(startMouse.y - e.clientY) * Math.PI * 2 / document.body.offsetHeight;
+    var yRotation = (e.clientX - startMouse.x) * Math.PI * 2 / document.body.offsetWidth;
+    
+    geometry.applyMatrix( new THREE.Matrix4().makeRotationY(yRotation) );
+    geometry.applyMatrix( new THREE.Matrix4().makeRotationX(xRotation) );
+    geometry.verticesNeedUpdate = true;
+    geometry.computeBoundingSphere();
+    geometry.computeFaceNormals();
+    geometry.computeVertexNormals();
+
+    render();
+    startMouse = {x:e.clientX,y:e.clientY};
+  }
+  document.body.onmousemove = mousemove;
+  document.body.onmousedown = function(e) { e.preventDefault(); startMouse = {x:e.clientX,y:e.clientY}; dragging = true; }
+  document.body.onmouseup = function(e) { mousemove(e); dragging = false; }
+
+  </script><html>

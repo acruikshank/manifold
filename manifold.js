@@ -147,6 +147,43 @@ function facer() {
   }
 }
 
+// RENDER
+function ThreeJSRenderer() {
+  var geometry = new THREE.Geometry();
+  return {
+    renderer : function( face ) {
+      saveThreeJSVertex( face[0] );
+      saveThreeJSVertex( face[1] );
+      saveThreeJSVertex( face[2] );
+      geometry.faces.push( new THREE.Face3(face[0].index, face[1].index, face[2].index) );
+    },
+    geometry: geometry
+  }
+}
+
+function saveThreeJSVertex(geometry, vertex) {
+  if (! geometry.vertices[vertex.index])
+    geometry.vertices[vertex.index] = new THREE.Vector3( vertex[0], vertex[1], vertex[2] );
+}
+
+function STLRenderer(){
+  var doc = 'solid pixel';
+  return {
+    renderer : function( face ) {
+      var normal = vnorm( vcross( vsub(face[1],face[0]), vsub(face[2],face[0])) );
+      doc += "facet normal " + normal.x + " " + normal.y + " " + normal.z + " \n";
+      doc += "outer loop \n";
+      doc += "vertex " + face[0].x + " " + face[0].y + " " + face[0].z + " \n";
+      doc += "vertex " + face[1].x + " " + face[1].y + " " + face[1].z + " \n";
+      doc += "vertex " + face[2].x + " " + face[2].y + " " + face[2].z + " \n";
+      doc += "endloop \n";
+      doc += "endfacet \n";
+    },
+    doc : function() { return doc + 'endsolid' }
+  }
+}
+
+
 // MATH
 
 function vadd(a,v) { return [a[0]+v[0], a[1]+v[1], a[2]+v[2]]; }
@@ -293,7 +330,7 @@ function tesselateVertices(vertices, faceSink) {
   
 }
 
-function tesselateConvex(vertices) {
+function tesselateConvex(vertices, faceSink) {
   var ai = 0, bi=(vertices.length/3)|0, ci=(2*vertices.length/3)|0;
   var a = vertices[ai], b=vertices[bi], c=vertices[ci];
 
