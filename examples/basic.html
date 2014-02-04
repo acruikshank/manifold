@@ -5,6 +5,7 @@
     body { background: #fff;}
   </style>
   <script src="three.min.js"></script>
+  <script src="../manifold.js"></script>
 </head>
 <body>
 </body>
@@ -14,6 +15,8 @@
   var particleLight2, pointLight2;
   var meshes = {};
   var dragging = false, startMouse;
+
+  var M = manifold;
 
   renderer = new THREE.WebGLRenderer();
   renderer.setSize( window.innerWidth, window.innerHeight );
@@ -43,23 +46,21 @@
     renderer.setSize( window.innerWidth, window.innerHeight );
   }
 
+
   var geometry = new THREE.Geometry();
 
-  geometry.vertices.push( new THREE.Vector3( -10,  10, 0 ) );
-  geometry.vertices.push( new THREE.Vector3( -10, -10, 0 ) );
-  geometry.vertices.push( new THREE.Vector3(  10, -10, 0 ) );
-  geometry.vertices.push( new THREE.Vector3(  -10,   -10, 10 ) );
+  var threeGeometry = M.ThreeJSRenderer();
 
-  geometry.faces.push( new THREE.Face3( 2, 1, 0 ) );
-  geometry.faces.push( new THREE.Face3( 0, 1, 3 ) );
-  geometry.faces.push( new THREE.Face3( 1, 2, 3 ) );
-  geometry.faces.push( new THREE.Face3( 2, 0, 3 ) );
+  M.step(2) (
+  M.vertices([[1,1,0],[-1,1,0],[-1,-1,0],[1,-1,0]]) (
+  M.translate([[0,0,-1],[0,0,1]]) (
+  M.facer() ( threeGeometry.renderer ))))
 
-  geometry.computeBoundingSphere();
-  geometry.computeFaceNormals();
+  threeGeometry.geometry.computeBoundingSphere();
+  threeGeometry.geometry.computeFaceNormals();
 
 
-  var mesh = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial( { color: '#ff0000' } ) );
+  var mesh = new THREE.Mesh(threeGeometry.geometry, new THREE.MeshPhongMaterial( { color: '#ff0000' } ) );
   scene.add(mesh);
 
   function render( ) {

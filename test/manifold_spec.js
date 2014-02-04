@@ -1,7 +1,6 @@
-expect = require('expect.js')
-manifold = require('../manifold')
+var expect = require('expect.js')
+var M = require('../manifold')
 
-var M = manifold.math;
 
 var DEFAULT_DISTANCE = .001;
 expect.Assertion.prototype.nearTo = function( vec, difference ) {
@@ -61,5 +60,37 @@ describe( 'math:', function() {
     expect( M.vscale(aNorm, M.vlength(a)) ).to.be.nearTo(a);
     expect( M.vscale(bNorm, M.vlength(b)) ).to.be.nearTo(b);
   })
+})
 
+describe( 'vertices:', function() {
+  it('emits a rib of three vertices when given 3 points', function() {
+    var vertices = [];    
+    M.vertices([[17,11,5],[7,13,3],[19,2,23]])(function(vertex) { vertices.push(vertex); })(0)
+
+    expect(vertices.length).to.equal(3);
+    expect(vertices[0].x).to.equal(17);
+    expect(vertices[0].y).to.equal(11);
+    expect(vertices[0].z).to.equal(5);
+
+    expect(vertices[1].x).to.equal(7);
+    expect(vertices[1].y).to.equal(13);
+    expect(vertices[1].z).to.equal(3);
+
+    expect(vertices[2].x).to.equal(19);
+    expect(vertices[2].y).to.equal(2);
+    expect(vertices[2].z).to.equal(23);
+  })
+})
+
+describe( 'facer:', function() {
+  it('emits two faces when given a square on two ribs', function() {
+    var faces = [];
+    var facer = M.facer()(function(face) { faces.push(face); });
+    facer( new M.Vertex([0,0,0],0,0) )
+    facer( new M.Vertex([1,0,0],0,1) )
+    facer( new M.Vertex([0,0,1],1,0) )
+    facer( new M.Vertex([1,0,1],1,1) )
+
+    expect(faces.length).to.equal(2);
+  })
 })
