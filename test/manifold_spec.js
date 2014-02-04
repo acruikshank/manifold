@@ -1,6 +1,15 @@
 var expect = require('expect.js')
 var M = require('../manifold')
 
+function prettyVertex(v) { return '{x:'+(v[0]).toFixed(2)+',y:'+(v[1]).toFixed(2)+',z:'+(v[2]).toFixed(2)+'}'; }
+
+expect.Assertion.prototype.containPoint = function( p ) {
+  var contains = false;
+  for (var i=0,v; v = this.obj[i]; i++ )
+    if ( M.vlength(M.vsub(p,v)) < .00001) contains = true;
+  this.assert( contains, function() { return 'expected face to contain ' + prettyVertex(p) }, 
+                         function() { return 'expected face to not contain ' + prettyVertex(p) })
+}
 
 var DEFAULT_DISTANCE = .001;
 expect.Assertion.prototype.nearTo = function( vec, difference ) {
@@ -82,15 +91,58 @@ describe( 'vertices:', function() {
   })
 })
 
-describe( 'facer:', function() {
+describe( 'skin:', function() {
   it('emits two faces when given a square on two ribs', function() {
     var faces = [];
-    var facer = M.facer()(function(face) { faces.push(face); });
+    var facer = M.skin()(function(face) { faces.push(face); });
     facer( new M.Vertex([0,0,0],0,0) )
     facer( new M.Vertex([1,0,0],0,1) )
     facer( new M.Vertex([0,0,1],1,0) )
     facer( new M.Vertex([1,0,1],1,1) )
 
     expect(faces.length).to.equal(2);
+    expect(faces[0]).to.containPoint( [0,0,0] );
+    expect(faces[0]).to.containPoint( [1,0,1] );
+    expect(faces[0]).to.containPoint( [0,0,1] );
+
+    expect(faces[1]).to.containPoint( [0,0,0] );
+    expect(faces[1]).to.containPoint( [1,0,1] );
+    expect(faces[1]).to.containPoint( [1,0,0] );
   })
+
+  it('emits 4 faces for 3 ribs of 3,1 and 3 vertices', function() {
+    var faces = [];
+    var facer = M.skin()(function(face) { faces.push(face); });
+    facer( new M.Vertex([-1,0,-1],0,0) )
+    facer( new M.Vertex([0,0,-1],0,.5) )
+    facer( new M.Vertex([1,0,-1],0,1) )
+    facer( new M.Vertex([0,0,0],.5,1) )
+    facer( new M.Vertex([-1,0,1],1,0) )
+    facer( new M.Vertex([0,0,1],1,.5) )
+    facer( new M.Vertex([1,0,1],1,1) )
+
+    expect(faces.length).to.equal(4);
+
+  })
+})
+
+describe( 'reverse:', function() { 
+  it('reverses face normal', function() {
+    var vertices = [new M.Vertex([0,0,0],0,0), new M.Vertex([1,0,0],0,1), new M.Vertex([0,0,1],1,1)]
+    var face;
+    var facer = M.skin()(function(f) { face = f; });
+    for (var i=0,v; v=vertices[i]; i++) facer( v );
+
+    // compute face normal
+    var forward = M.vnorm( M.vcross(M.vsub(face[1],face[0]), M.vsub(face[2],face[0])) );
+
+    face = null;
+    facer = M.reverse(M.skin())(function(f) { face = f; } );
+    for (var i=0,v; v=vertices[i]; i++) facer( v );
+
+    // compute face normal
+    var reverse = M.vnorm( M.vcross(M.vsub(face[1],face[0]), M.vsub(face[2],face[0])) );
+
+    expect( M.vdot(forward,reverse) ).to.be.within( -1.00001, -.99999 );
+  }) 
 })

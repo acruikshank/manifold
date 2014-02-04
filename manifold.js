@@ -113,7 +113,7 @@ Renderer: FaceSink
   }
 
   // TESSELATE
-  function facer() {
+  function skin() {
     return function( faceSink ) {
       var lastRib;
       var nextRib = [];
@@ -127,16 +127,18 @@ Renderer: FaceSink
           lastTransformStep = vertex.transformStep;
         }
 
-        if (lastRib && nextRib.length) {
-          var tlVertex = nextRib[nextRib.length-1];
+        if (lastRib) {
           var blVertex = lastRib[bIndex];
           var brVertex = lastRib[bIndex+1];
-          faceSink( [blVertex, tlVertex, vertex] );
+
+          if (nextRib.length) {
+            faceSink( [blVertex, nextRib[nextRib.length-1], vertex] );
+          }
 
           while ( brVertex &&  vertex.ribStep > blVertex.ribStep + (brVertex.ribStep-blVertex.ribStep)/2 ) {
             faceSink( [blVertex, vertex, brVertex] );
             blVertex = brVertex;
-            brVertex = lastRib[++bIndex];
+            brVertex = lastRib[++bIndex + 1];
           }
         }
 
@@ -145,7 +147,16 @@ Renderer: FaceSink
     }
   }
 
-  function faceString(face) { return face.map(function(v){return '{'+v.x+','+v.y+','+v.z+'} '})  }
+  function reverse(facer) {
+    return function( faceSink ) {
+      return facer( function(face) {
+        faceSink( [face[2],face[1],face[0]] )
+      })
+    }
+  }
+
+  function vertexString(v) {return '{'+v.x+','+v.y+','+v.z+'} '}
+  function faceString(face) { return face.map(vertexString); }
 
   // RENDER
   function ThreeJSRenderer() {
@@ -356,7 +367,7 @@ Renderer: FaceSink
       step:step,
       Vertex:Vertex, vertices:vertices, parametric:parametric,
       translate:translate,
-      facer:facer,
+      skin:skin, reverse:reverse,
       ThreeJSRenderer:ThreeJSRenderer, STLRenderer:STLRenderer
   };
   for (var k in all) context[k] = all[k];
