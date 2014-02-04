@@ -47,20 +47,20 @@
   }
 
 
-  var geometry = new THREE.Geometry();
 
   var threeGeometry = M.ThreeJSRenderer();
+  var geometry = threeGeometry.geometry;
 
   M.step(2) (
-  M.vertices([[1,1,0],[-1,1,0],[-1,-1,0],[1,-1,0]]) (
-  M.translate([[0,0,-1],[0,0,1]]) (
+  M.vertices([[-10,-10,0],[-10,10,0],[10,10,0],[10,-10,0]]) (
+  M.translate([[0,0,-10],[0,0,10]]) (
   M.facer() ( threeGeometry.renderer ))))
 
-  threeGeometry.geometry.computeBoundingSphere();
-  threeGeometry.geometry.computeFaceNormals();
+  geometry.computeBoundingSphere();
+  geometry.computeFaceNormals();
 
 
-  var mesh = new THREE.Mesh(threeGeometry.geometry, new THREE.MeshPhongMaterial( { color: '#ff0000' } ) );
+  var mesh = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial( { color: '#ff0000' } ) );
   scene.add(mesh);
 
   function render( ) {

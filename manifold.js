@@ -117,29 +117,26 @@ Renderer: FaceSink
     return function( faceSink ) {
       var lastRib;
       var nextRib = [];
-      var bottomVertexIndex = 0;
+      var bIndex = 0;
       var lastTransformStep = 0;
       return function( vertex ) {
-        console.log('got vertex', vertex)
         if ( vertex.transformStep > lastTransformStep ) {
           lastRib = nextRib;
           nextRib = [];
-          bottomVertexIndex=0;
+          bIndex=0;
           lastTransformStep = vertex.transformStep;
         }
 
         if (lastRib && nextRib.length) {
-          var topLeftVertex = nextRib[nextRib.length-1];
-          var bottomLeftVertex = lastRib[bottomVertexIndex];
-          var bottomRightVertex = lastRib[bottomVertexIndex+1];
-          faceSink( [bottomLeftVertex, topLeftVertex, vertex] );
+          var tlVertex = nextRib[nextRib.length-1];
+          var blVertex = lastRib[bIndex];
+          var brVertex = lastRib[bIndex+1];
+          faceSink( [blVertex, tlVertex, vertex] );
 
-          while ( bottomRightVertex && 
-              vertex.ribStep > bottomLeftVertex.ribStep + (bottomRightVertex.ribStep-bottomLeftVertex.ribStep)/2 ) {
-            faceSink( [bottomLeftVertex, vertex, bottomRightVertex] );
-            bottomVertexIndex++;
-            bottomLeftVertex = bottomRightVertex;
-            bottomRightVertex = lastRib[bottomVertexIndex+1];
+          while ( brVertex &&  vertex.ribStep > blVertex.ribStep + (brVertex.ribStep-blVertex.ribStep)/2 ) {
+            faceSink( [blVertex, vertex, brVertex] );
+            blVertex = brVertex;
+            brVertex = lastRib[++bIndex];
           }
         }
 
@@ -155,19 +152,18 @@ Renderer: FaceSink
     var geometry = new THREE.Geometry();
     return {
       renderer : function( face ) {
-        console.log(faceString(face));
         saveThreeJSVertex( geometry, face[0] );
         saveThreeJSVertex( geometry, face[1] );
         saveThreeJSVertex( geometry, face[2] );
-        geometry.faces.push( new THREE.Face3(face[0].index, face[1].index, face[2].index) );
+        geometry.faces.push( new THREE.Face3(face[0].id, face[1].id, face[2].id) );
       },
       geometry: geometry
     }
   }
 
   function saveThreeJSVertex(geometry, vertex) {
-    if (! geometry.vertices[vertex.index])
-      geometry.vertices[vertex.index] = new THREE.Vector3( vertex[0], vertex[1], vertex[2] );
+    if (! geometry.vertices[vertex.id])
+      geometry.vertices[vertex.id] = new THREE.Vector3( vertex[0], vertex[1], vertex[2] );
   }
 
   function STLRenderer(){
