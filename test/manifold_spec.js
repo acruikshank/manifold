@@ -2,14 +2,33 @@ var expect = require('expect.js')
 var M = require('../manifold')
 
 function prettyVertex(v) { return '{x:'+(v[0]).toFixed(2)+',y:'+(v[1]).toFixed(2)+',z:'+(v[2]).toFixed(2)+'}'; }
+function prettyFace(f) { return 'face:' + f.map(prettyVertex).join(', '); }
+
+function faceContainsPoint( face, p ) {
+  for (var i=0,v; v = face[i]; i++ )
+    if ( M.vlength(M.vsub(p,v)) < .00001) return true;
+  return false;
+}
+
+function facesContainsFace( faces, points ) {
+  for (var i=0,face; face = faces[i]; i++)
+    if (points.reduce(function(m,p) { return m && faceContainsPoint(face,p) }, true))
+      return true;
+  return false;
+}
 
 expect.Assertion.prototype.containPoint = function( p ) {
-  var contains = false;
-  for (var i=0,v; v = this.obj[i]; i++ )
-    if ( M.vlength(M.vsub(p,v)) < .00001) contains = true;
-  this.assert( contains, function() { return 'expected face to contain ' + prettyVertex(p) }, 
-                         function() { return 'expected face to not contain ' + prettyVertex(p) })
+  this.assert( faceContainsPoint(this.obj, p), 
+      function() { return 'expected face to contain ' + prettyVertex(p) }, 
+      function() { return 'expected face to not contain ' + prettyVertex(p) })
 }
+
+expect.Assertion.prototype.containFace = function( points ) {
+  this.assert( facesContainsFace(this.obj, points), 
+      function() { return 'expected faces to contain ' + prettyFace(points) }, 
+      function() { return 'expected faces to not contain ' + prettyFace(points) })
+}
+
 
 var DEFAULT_DISTANCE = .001;
 expect.Assertion.prototype.nearTo = function( vec, difference ) {
@@ -94,7 +113,7 @@ describe( 'vertices:', function() {
 describe( 'skin:', function() {
   it('emits two faces when given a square on two ribs', function() {
     var faces = [];
-    var facer = M.skin()(function(face) { faces.push(face); });
+    var facer = M.skin(function(face) { faces.push(face); });
     facer( new M.Vertex([0,0,0],0,0) )
     facer( new M.Vertex([1,0,0],0,1) )
     facer( new M.Vertex([0,0,1],1,0) )
@@ -112,7 +131,7 @@ describe( 'skin:', function() {
 
   it('emits 4 faces for 3 ribs of 3,1 and 3 vertices', function() {
     var faces = [];
-    var facer = M.skin()(function(face) { faces.push(face); });
+    var facer = M.skin(function(face) { faces.push(face); });
     facer( new M.Vertex([-1,0,-1],0,0) )
     facer( new M.Vertex([0,0,-1],0,.5) )
     facer( new M.Vertex([1,0,-1],0,1) )
@@ -122,7 +141,6 @@ describe( 'skin:', function() {
     facer( new M.Vertex([1,0,1],1,1) )
 
     expect(faces.length).to.equal(4);
-
   })
 })
 
@@ -130,14 +148,14 @@ describe( 'reverse:', function() {
   it('reverses face normal', function() {
     var vertices = [new M.Vertex([0,0,0],0,0), new M.Vertex([1,0,0],0,1), new M.Vertex([0,0,1],1,1)]
     var face;
-    var facer = M.skin()(function(f) { face = f; });
+    var facer = M.skin(function(f) { face = f; });
     for (var i=0,v; v=vertices[i]; i++) facer( v );
 
     // compute face normal
     var forward = M.vnorm( M.vcross(M.vsub(face[1],face[0]), M.vsub(face[2],face[0])) );
 
     face = null;
-    facer = M.reverse(M.skin())(function(f) { face = f; } );
+    facer = M.reverse(M.skin) (function(f) { face = f; } );
     for (var i=0,v; v=vertices[i]; i++) facer( v );
 
     // compute face normal
@@ -145,4 +163,71 @@ describe( 'reverse:', function() {
 
     expect( M.vdot(forward,reverse) ).to.be.within( -1.00001, -.99999 );
   }) 
+})
+
+describe( 'closeEdge', function() {
+  var faces;
+
+  describe("with a simple cube", function() {
+    beforeEach( function() {
+      faces = [];
+      var vertices = [  // a pyramid atop a cube atop an inverted pyramid.
+        [[1,1,2],[1,-1,2],[-1,-1,2],[-1,1,2]],
+        [[1,1,4],[1,-1,4],[-1,-1,4],[-1,1,4]]];
+
+      var faceSink = function(face) { faces.push(face); };
+      var facer = M.facers( M.skin, M.closeEdge )( faceSink );
+
+      vertices.forEach(function(rib, transformStep) { rib.forEach(function(v, ribStep) {
+        var ts = transformStep/(vertices.length-1), rs = rib.length > 1 ? ribStep/(rib.length - 1) : 1;
+        facer( new M.Vertex(v, ts, rs) );
+      }) })
+    })
+
+    it ('produces all skin faces plus 2 faces to close', function() {
+      expect( faces.length ).to.equal( 8 );
+    })
+
+    it ('closes the cube', function() {
+      expect( faces ).to.containFace( [[-1,1,2],[-1,1,4],[1,1,4]] )
+      expect( faces ).to.containFace( [[-1,1,2],[1,1,4],[-1,1,2]] )
+    })
+
+  })
+
+  describe("with degenerate ribs", function() { 
+    beforeEach( function() {
+      faces = [];
+      var vertices = [  // a pyramid atop a cube atop an inverted pyramid.
+        [[0,0,0]],
+        [[1,1,2],[1,-1,2],[-1,-1,2],[-1,1,2]],
+        [[1,1,4],[1,-1,4],[-1,-1,4],[-1,1,4]],
+        [[0,0,6]]];
+
+      var faceSink = function(face) { faces.push(face); };
+      var facer = M.facers( M.skin, M.closeEdge )( faceSink );
+
+      vertices.forEach(function(rib, transformStep) { rib.forEach(function(v, ribStep) {
+        var ts = transformStep/(vertices.length-1), rs = rib.length > 1 ? ribStep/(rib.length - 1) : 1;
+        facer( new M.Vertex(v, ts, rs) );
+      }) })
+    })
+
+    it ('produces all skin faces plus 4 faces to close', function() {
+      expect( faces.length ).to.equal( 16 );
+    })
+
+    it ('closes the bottom pyramid', function() {
+      expect( faces ).to.containFace( [[0,0,0],[-1,1,2],[1,1,2]] )
+    })
+
+    it ('closes the middle cube', function() {
+      expect( faces ).to.containFace( [[-1,1,2],[-1,1,4],[1,1,4]] )
+      expect( faces ).to.containFace( [[-1,1,2],[1,1,4],[-1,1,2]] )
+    })
+
+    it ('closes the top pyramid', function() {
+      expect( faces ).to.containFace( [[0,0,6],[-1,1,4],[1,1,4]] )
+    })
+  })
 })

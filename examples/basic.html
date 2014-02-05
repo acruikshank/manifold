@@ -54,7 +54,7 @@
   M.step(2) (
   M.vertices([[-10,-10,0],[-10,10,0],[10,10,0],[10,-10,0]]) (
   M.translate([[0,0,-10],[0,0,10]]) (
-  M.skin() ( threeGeometry.renderer ))))
+  M.facers( M.skin, M.closeEdge ) ( threeGeometry.renderer ))))
 
   geometry.computeBoundingSphere();
   geometry.computeFaceNormals();

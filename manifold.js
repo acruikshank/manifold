@@ -113,39 +113,77 @@ Renderer: FaceSink
   }
 
   // TESSELATE
-  function skin() {
-    return function( faceSink ) {
-      var lastRib;
-      var nextRib = [];
-      var bIndex = 0;
-      var lastTransformStep = 0;
-      return function( vertex ) {
-        if ( vertex.transformStep > lastTransformStep ) {
-          lastRib = nextRib;
-          nextRib = [];
-          bIndex=0;
-          lastTransformStep = vertex.transformStep;
+  function skin( faceSink ) {
+    var lastRib;
+    var nextRib = [];
+    var bIndex = 0;
+    var lastTransformStep = 0;
+    return function skinVertexSink( vertex ) {
+      if ( vertex.transformStep > lastTransformStep ) {
+        lastRib = nextRib;
+        nextRib = [];
+        bIndex=0;
+        lastTransformStep = vertex.transformStep;
+      }
+
+      if (lastRib) {
+        var blVertex = lastRib[bIndex];
+        var brVertex = lastRib[bIndex+1];
+
+        if (nextRib.length) {
+          faceSink( [blVertex, nextRib[nextRib.length-1], vertex] );
         }
 
-        if (lastRib) {
-          var blVertex = lastRib[bIndex];
-          var brVertex = lastRib[bIndex+1];
-
-          if (nextRib.length) {
-            faceSink( [blVertex, nextRib[nextRib.length-1], vertex] );
-          }
-
-          while ( brVertex &&  vertex.ribStep > blVertex.ribStep + (brVertex.ribStep-blVertex.ribStep)/2 ) {
-            faceSink( [blVertex, vertex, brVertex] );
-            blVertex = brVertex;
-            brVertex = lastRib[++bIndex + 1];
-          }
+        while ( brVertex &&  vertex.ribStep > blVertex.ribStep + (brVertex.ribStep-blVertex.ribStep)/2 ) {
+          faceSink( [blVertex, vertex, brVertex] );
+          blVertex = brVertex;
+          brVertex = lastRib[++bIndex + 1];
         }
+      }
 
-        nextRib.push(vertex)
+      nextRib.push(vertex)
+    }
+  }
+
+  function facers(facer1, facer2, etc) {
+    var facers = Array.prototype.slice.call(arguments,0);
+    return function facersFacer( faceSink ) {
+      var vertexSinks = facers.map( function(f) { return f(faceSink); } );
+      return function facersVertexSink( vertex ) {
+        vertexSinks.forEach(function(vs) {vs(vertex)});
       }
     }
   }
+
+  function closeEdge( faceSink ) {
+    var bottomFirstInRib, bottomLastInRib;
+    var topFirstInRib, topLastInRib;
+    return function wrapEdgeVertexSink( vertex ) {
+      if ( ! topFirstInRib )
+        topFirstInRib = vertex;
+      else if ( vertex.transformStep == topFirstInRib.transformStep )
+        topLastInRib = vertex;
+
+      if ( vertex.ribStep == 1 || vertex.transformStep > topFirstInRib.transformStep ) {
+        if ( bottomFirstInRib ) {
+          if ( topLastInRib && bottomLastInRib )
+            faceSink( [bottomLastInRib, topLastInRib, topFirstInRib] );
+
+          if ( bottomLastInRib ) 
+            faceSink( [bottomLastInRib, topFirstInRib, bottomFirstInRib] );
+          else if ( topLastInRib )
+            faceSink( [bottomFirstInRib, topLastInRib, topFirstInRib] );
+        }
+
+        bottomFirstInRib = topFirstInRib;
+        bottomLastInRib = topLastInRib;
+        topFirstInRib = vertex.transformStep > topFirstInRib.transformStep ? vertex : null;
+        topLastInRib = null;
+      }
+    }
+  }
+
+  // FACER TRANSFORMS
 
   function reverse(facer) {
     return function( faceSink ) {
@@ -155,7 +193,7 @@ Renderer: FaceSink
     }
   }
 
-  function vertexString(v) {return '{'+v.x+','+v.y+','+v.z+'} '}
+  function vertexString(v) {return v?'{'+v.x+','+v.y+','+v.z+'} ':'null'}
   function faceString(face) { return face.map(vertexString); }
 
   // RENDER
@@ -367,7 +405,7 @@ Renderer: FaceSink
       step:step,
       Vertex:Vertex, vertices:vertices, parametric:parametric,
       translate:translate,
-      skin:skin, reverse:reverse,
+      skin:skin, facers:facers, closeEdge:closeEdge, reverse:reverse,
       ThreeJSRenderer:ThreeJSRenderer, STLRenderer:STLRenderer
   };
   for (var k in all) context[k] = all[k];
