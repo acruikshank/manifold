@@ -46,15 +46,13 @@
     renderer.setSize( window.innerWidth, window.innerHeight );
   }
 
-
-
   var threeGeometry = M.ThreeJSRenderer();
   var geometry = threeGeometry.geometry;
 
   M.step(2) (
   M.vertices([[-10,-10,0],[-10,10,0],[10,10,0],[10,-10,0]]) (
   M.translate([[0,0,-10],[0,0,10]]) (
-  M.facers( M.skin, M.closeEdge ) ( threeGeometry.renderer ))))
+  M.facers( M.skin, M.closeEdge, M.capBottom, M.capTop ) ( threeGeometry.renderer ))))
 
   geometry.computeBoundingSphere();
   geometry.computeFaceNormals();

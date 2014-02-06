@@ -3,11 +3,21 @@ var M = require('../manifold')
 
 function prettyVertex(v) { return '{x:'+(v[0]).toFixed(2)+',y:'+(v[1]).toFixed(2)+',z:'+(v[2]).toFixed(2)+'}'; }
 function prettyFace(f) { return 'face:' + f.map(prettyVertex).join(', '); }
+function faceNormal(face) { return M.vnorm( M.vcross(M.vsub(face[1],face[0]), M.vsub(face[2],face[0])) ) }
 
 function faceContainsPoint( face, p ) {
   for (var i=0,v; v = face[i]; i++ )
     if ( M.vlength(M.vsub(p,v)) < .00001) return true;
   return false;
+}
+
+// create vertex from each of a 2d array of coordinates using the index for rib and transform steps
+// and feed it into facer.
+function applyVertices( facer, vertices ) {
+  vertices.forEach(function(rib, transformStep) { rib.forEach(function(v, ribStep) {
+    var ts = transformStep/(vertices.length-1), rs = rib.length > 1 ? ribStep/(rib.length - 1) : 1;
+    facer( new M.Vertex(v, ts, rs) );
+  }) })
 }
 
 function facesContainsFace( faces, points ) {
@@ -28,7 +38,6 @@ expect.Assertion.prototype.containFace = function( points ) {
       function() { return 'expected faces to contain ' + prettyFace(points) }, 
       function() { return 'expected faces to not contain ' + prettyFace(points) })
 }
-
 
 var DEFAULT_DISTANCE = .001;
 expect.Assertion.prototype.nearTo = function( vec, difference ) {
@@ -152,14 +161,14 @@ describe( 'reverse:', function() {
     for (var i=0,v; v=vertices[i]; i++) facer( v );
 
     // compute face normal
-    var forward = M.vnorm( M.vcross(M.vsub(face[1],face[0]), M.vsub(face[2],face[0])) );
+    var forward = faceNormal(face);
 
     face = null;
     facer = M.reverse(M.skin) (function(f) { face = f; } );
     for (var i=0,v; v=vertices[i]; i++) facer( v );
 
     // compute face normal
-    var reverse = M.vnorm( M.vcross(M.vsub(face[1],face[0]), M.vsub(face[2],face[0])) );
+    var reverse = faceNormal(face);
 
     expect( M.vdot(forward,reverse) ).to.be.within( -1.00001, -.99999 );
   }) 
@@ -178,10 +187,7 @@ describe( 'closeEdge', function() {
       var faceSink = function(face) { faces.push(face); };
       var facer = M.facers( M.skin, M.closeEdge )( faceSink );
 
-      vertices.forEach(function(rib, transformStep) { rib.forEach(function(v, ribStep) {
-        var ts = transformStep/(vertices.length-1), rs = rib.length > 1 ? ribStep/(rib.length - 1) : 1;
-        facer( new M.Vertex(v, ts, rs) );
-      }) })
+      applyVertices( facer, vertices );
     })
 
     it ('produces all skin faces plus 2 faces to close', function() {
@@ -207,10 +213,7 @@ describe( 'closeEdge', function() {
       var faceSink = function(face) { faces.push(face); };
       var facer = M.facers( M.skin, M.closeEdge )( faceSink );
 
-      vertices.forEach(function(rib, transformStep) { rib.forEach(function(v, ribStep) {
-        var ts = transformStep/(vertices.length-1), rs = rib.length > 1 ? ribStep/(rib.length - 1) : 1;
-        facer( new M.Vertex(v, ts, rs) );
-      }) })
+      applyVertices( facer, vertices );
     })
 
     it ('produces all skin faces plus 4 faces to close', function() {
@@ -231,3 +234,52 @@ describe( 'closeEdge', function() {
     })
   })
 })
+
+describe( 'cap', function() {
+  var faces;
+  var vertices = [  // a pyramid atop a cube atop an inverted pyramid.
+    [[1,1,2],[1,-1,2],[-1,-1,2],[-1,1,2]],
+    [[1,1,4],[1,-1,4],[-1,-1,4],[-1,1,4]]];
+
+  describe("bottom", function() {
+    beforeEach( function() {
+      faces = [];
+
+      var faceSink = function(face) { faces.push(face); };
+      var facer = M.capBottom( faceSink );
+
+      applyVertices( facer, vertices );
+    })
+
+    it ('produces 2 vertices for the bottom', function() {
+      expect( faces.length ).to.equal( 2 );
+    })
+
+    it ('faces point down', function() {
+      expect( faceNormal(faces[0]) ).to.be.nearTo( [0,0,-1] )
+      expect( faceNormal(faces[1]) ).to.be.nearTo( [0,0,-1] )
+    })
+  })
+
+  describe("top", function() {
+    beforeEach( function() {
+      faces = [];
+
+      var faceSink = function(face) { faces.push(face); };
+      var facer = M.capTop( faceSink );
+
+      applyVertices( facer, vertices );
+    })
+
+    it ('produces 2 vertices for the top', function() {
+      expect( faces.length ).to.equal( 2 );
+    })
+
+    it ('faces point up', function() {
+      expect( faceNormal(faces[0]) ).to.be.nearTo( [0,0,1] )
+      expect( faceNormal(faces[1]) ).to.be.nearTo( [0,0,1] )
+    })
+
+  })
+})
+

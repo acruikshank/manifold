@@ -183,13 +183,44 @@ Renderer: FaceSink
     }
   }
 
+  function capBottom( faceSink ) {
+    var rib = [];
+    return function capBottomVertexSink( vertex ) {
+      if ( vertex.transformStep == 0 )
+        return rib.push(vertex);
+
+      if (rib) {
+        tesselate(rib, reverseFaceSink(faceSink) );
+        rib = null;
+      }
+    }
+  }
+
+  function capTop( faceSink ) {
+    var rib = [];
+    return function capBottomVertexSink( vertex ) {
+      if ( vertex.transformStep < 1 ) return;
+
+      rib.push(vertex);
+
+      if (vertex.ribStep == 1)
+        tesselate(rib, faceSink );
+    }
+  }
+
   // FACER TRANSFORMS
 
+  // Facer -> Facer
   function reverse(facer) {
     return function( faceSink ) {
-      return facer( function(face) {
-        faceSink( [face[2],face[1],face[0]] )
-      })
+      return facer( reverseFaceSink(faceSink) )
+    }
+  }
+
+  // FaceSink -> FaceSink
+  function reverseFaceSink( faceSink ) {
+    return function(face) {
+      faceSink( [face[2],face[1],face[0]] )
     }
   }
 
@@ -280,27 +311,29 @@ Renderer: FaceSink
     return vsub( pTranslated, vscale( planeNormal, vdot( pTranslated, planeNormal )))
   }
 
-  function tesselate3d( points3d, faceSink ) {
+  function tesselate( points3d, faceSink ) {
+    // determine approximate plane through loop and map points onto it.
     var planeNormal = vnorm(loopMeanNormal(points3d));
     var planePoint = vectorAverage(points3d);
 
     var offNormal = vadd( planePoint, Math.abs(planeNormal[0] < .5) ? [1,0,0] : [0,1,0] );
     var axis1 = vnorm(projectIntoPlane(offNormal ,planePoint, planeNormal));
-    var axis2 = vcross( axis1, planeNormal );
+    var axis2 = vcross( planeNormal, axis1 );
 
-    var vertices2d = points3d.map( function(p) {
+    var vertices2d = points3d.map( function(p,index) {
       var pointInPlane = projectIntoPlane(p, planePoint, planeNormal);
-      return [vdot(pointInPlane,axis1), vdot(pointInPlane,axis2)];
+      return new Vertex([vdot(pointInPlane,axis1), vdot(pointInPlane,axis2),0],0,0,index);
     })
 
-    tesslateVertices( vertices2d, function(face) {
-      faceSink(face);
+    // tesselate 2d loop
+    tesselateVertices( vertices2d, function(face) {
+      faceSink([ points3d[face[0].id], points3d[face[1].id], points3d[face[2].id] ]);
     })
   }
 
   function tesselateVertices(vertices, faceSink) {
     if ( vertices.length < 3 ) return;
-    if ( vertices.length < 4 ) return tesselateConvex(vertices);
+    if ( vertices.length < 4 ) return tesselateConvex(vertices, faceSink);
       
     // traveling in either direction, find the first negative vertex followed by a positive one.
     // If there are no negative vertices, the shape is convex. Tesselate and return.
@@ -362,20 +395,12 @@ Renderer: FaceSink
             tesselate( vertices.slice(endPoint).concat(vertices.slice(0,startPoint+1)) );
           }
 
-          ctx.strokeStyle = '#fff';
-          ctx.lineWidth = 2;
-          var p = center(startPoint);
-          ctx.beginPath()
-          ctx.moveTo( p.x, p.y );
-          p = center(endPoint);
-          ctx.lineTo( p.x, p.y );
-          ctx.stroke();  
           return;
         }
       }
     }
     
-    return tesselateConvex(vertices);
+    return tesselateConvex(vertices, faceSink);
     
   }
 
@@ -383,21 +408,12 @@ Renderer: FaceSink
     var ai = 0, bi=(vertices.length/3)|0, ci=(2*vertices.length/3)|0;
     var a = vertices[ai], b=vertices[bi], c=vertices[ci];
 
-    ctx.fillStyle = randomColor();
-    ctx.strokeStyle = '#000';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(a.x,a.y);
-    ctx.lineTo(b.x,b.y);
-    ctx.lineTo(c.x,c.y);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
+    faceSink( [c,b,a] );
     
-    if (bi-ai > 1) tesselateConvex(vertices.slice(ai,bi+1));
-    if (ci-bi > 1) tesselateConvex(vertices.slice(bi,ci+1));
+    if (bi-ai > 1) tesselateConvex(vertices.slice(ai,bi+1), faceSink);
+    if (ci-bi > 1) tesselateConvex(vertices.slice(bi,ci+1), faceSink);
     if (vertices.length-ci > 1) 
-      tesselateConvex(vertices.slice(ci,vertices.length).concat([a]));
+      tesselateConvex(vertices.slice(ci,vertices.length).concat([a]), faceSink);
   }
 
   var all = {
@@ -405,7 +421,8 @@ Renderer: FaceSink
       step:step,
       Vertex:Vertex, vertices:vertices, parametric:parametric,
       translate:translate,
-      skin:skin, facers:facers, closeEdge:closeEdge, reverse:reverse,
+      skin:skin, facers:facers, closeEdge:closeEdge, capBottom:capBottom, capTop:capTop,
+      reverse:reverse,
       ThreeJSRenderer:ThreeJSRenderer, STLRenderer:STLRenderer
   };
   for (var k in all) context[k] = all[k];
