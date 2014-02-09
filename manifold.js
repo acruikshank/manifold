@@ -88,13 +88,13 @@ Renderer: FaceSink
     }
   }
 
-  function parametric(f) {
+  function parametric(f, stepper) {
     return function(vertexSink) {
       var index = 0;
-      return function( ribStep ) {
-        return function( transformStep ) {
+      return function( transformStep ) {
+        stepper( function(ribStep) {
           vertexSink( new Vertex(f(ribStep, transformStep), transformStep, ribStep, index++) );
-        }
+        })
       }
     }
   }

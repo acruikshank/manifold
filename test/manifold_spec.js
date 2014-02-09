@@ -43,7 +43,7 @@ var DEFAULT_DISTANCE = .001;
 expect.Assertion.prototype.nearTo = function( vec, difference ) {
   if (difference == undefined) difference = DEFAULT_DISTANCE;
 
-  var expectStr = this.obj.map(function(x) {return x.toFixed(2)})
+  var expectStr = Array.prototype.map.call(this.obj, function(x) {return x.toFixed(2)})
   var vecStr = vec.map(function(x) {return x.toFixed(2)})
   this.assert(
     M.vlength(M.vsub(this.obj, vec)) <= difference
@@ -232,6 +232,22 @@ describe( 'closeEdge', function() {
     it ('closes the top pyramid', function() {
       expect( faces ).to.containFace( [[0,0,6],[-1,1,4],[1,1,4]] )
     })
+  })
+})
+
+describe('parametric', function() {
+  var vertices;
+
+  it ('emits vertices', function() {
+    vertices = [];
+    function linear(r,t) { return [r,t,5] }
+    M.step(2) (M.parametric(linear, M.step(2)) (function(v) {vertices.push(v)}))
+
+    expect( vertices.length ).to.be(4);
+    expect( vertices[0] ).to.be.nearTo([0,0,5])
+    expect( vertices[1] ).to.be.nearTo([1,0,5])
+    expect( vertices[2] ).to.be.nearTo([0,1,5])
+    expect( vertices[3] ).to.be.nearTo([1,1,5])
   })
 })
 
