@@ -70,6 +70,19 @@ Renderer: FaceSink
     set:function(id) {this[5]=id}})
 
 
+  function resolveCurve( points, s, start, size ) {
+    start = start || 0;
+    size = size || points.length;
+    if ( size < 2 ) return points[start];
+
+    var p1 = resolveCurve( points, s, start, size-1 ), p2 = resolveCurve( points, s, start+1, size-1 );
+    return vadd( p1, vscale( vsub(p2, p1), s) );
+  }
+
+  function Path( start ) {
+    var segments = [];
+  }
+
   // STEP
   function step(iterations) {
     return function(stepSink) {
