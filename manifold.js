@@ -79,8 +79,30 @@ Renderer: FaceSink
     return vadd( p1, vscale( vsub(p2, p1), s) );
   }
 
+  function curveTangent( points, s, start, size ) {
+    start = start || 0;
+    size = size || points.length;
+    if ( size < 2 ) return [0,0,0];
+
+    var p1 = resolveCurve( points, s, start, size-1 ), p2 = resolveCurve( points, s, start+1, size-1 );
+    return vnorm( vsub( p2, p1 ) );
+  }
+
+  function curveCurl( points, s, start, size ) {
+    start = start || 0;
+    size = size || points.length;
+    if ( size < 3 ) return [0,0,0];
+
+    var p1 = resolveCurve( points, s, start, size-2 ), 
+        p2 = resolveCurve( points, s, start+1, size-2 ),
+        p3 = resolveCurve( points, s, start+2, size-2 );
+    return vcross( vsub( p3, p2 ), vsub( p1, p2 ) );
+  }
+
   function Path( start ) {
-    var segments = [];
+    var segments = [], path = {};
+    
+    return path;
   }
 
   // STEP
