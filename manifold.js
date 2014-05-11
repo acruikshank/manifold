@@ -45,6 +45,8 @@ Renderer: FaceSink
       parametric(semiCircle))(
         zRotate()(
           face(connect:'tb', singular:'lr')( renderer ))))
+
+
   */
 
   function Vertex( point, transformStep, ribStep, id) {
@@ -99,8 +101,52 @@ Renderer: FaceSink
     return vcross( vsub( p3, p2 ), vsub( p1, p2 ) );
   }
 
+  var pathIndex = 0;
   function Path( start ) {
-    var segments = [], path = {};
+    var segments = [], points = [start], path = {}, totalWeight = 0;
+
+    path.curve = function(ps, weight) {
+      if (weight == null) weight = 1;
+
+      for (var i=0,point;point = ps[i];i++) points.push(point);
+
+      segments.push({s:points.length-ps.length-1, o:ps.length+1, w:weight});
+
+      totalWeight += weight;
+      return path;
+    }
+
+    path.line = function(point, weight) {
+      return path.curve([point], weight);
+    }
+
+    path.spline = function(ps, weight) {
+      if (points.length < 2) path.curve(ps);
+
+      var p1 = points[points.length-1];
+      var p2 = points[points.length-2];
+      var ctl = vadd( p1, vscale( vsub(p2,p1), -1) );
+
+      return path.curve( [ctl].concat(ps), weight);
+    }
+
+    path.vertices = function(vertexSink, step, numVertices) {
+      var allDivisions = Math.max(numVertices, segments.length + 1);
+      var remainingDivisions = allDivisions - 1 - segments.length;
+      var remainingWeight = totalWeight;
+      var index = 0;
+
+      for (var i=0,s; s = segments[i]; i++) {
+        var divisions = i >= segments.length - 1 ? remainingDivisions + 1 : (s.w * remainingDivisions / remainingWeight + 1)|0;
+        for (var j=0; j<divisions; j++)
+          vertexSink( new Vertex(resolveCurve(points,j/divisions, s.s, s.o), step, (index++)/(allDivisions-1), pathIndex++) );
+
+        remainingDivisions -= divisions - 1;
+        remainingWeight -= s.w;
+      }
+
+      vertexSink( new Vertex(points[points.length-1], step, 1, pathIndex++) );
+    }
     
     return path;
   }
@@ -138,6 +184,7 @@ Renderer: FaceSink
   function translate(translations) {
     return function( vertexSink ) {
       return function( vertex ) {
+        console.log(vertex)
         var tIndex = parseInt(vertex.transformStep * (translations.length-1))
         var translate = vertex.transformStep==1 ? 
           translations[tIndex] : 
@@ -166,11 +213,13 @@ Renderer: FaceSink
         var brVertex = lastRib[bIndex+1];
 
         if (nextRib.length) {
+          console.log('top face', blVertex.id, nextRib[nextRib.length-1].id, vertex.id)
           faceSink( [blVertex, nextRib[nextRib.length-1], vertex] );
         }
 
         while ( brVertex &&  vertex.ribStep > blVertex.ribStep + (brVertex.ribStep-blVertex.ribStep)/2 ) {
           faceSink( [blVertex, vertex, brVertex] );
+          console.log("face", blVertex.id, vertex.id, brVertex.id)
           blVertex = brVertex;
           brVertex = lastRib[++bIndex + 1];
         }
@@ -423,11 +472,11 @@ Renderer: FaceSink
             return;
           }
           if (endPoint < startPoint) {
-            tesselate( vertices.slice(startPoint).concat(vertices.slice(0,endPoint+1)) );
-            tesselate( vertices.slice(endPoint, startPoint+1 ) );
+            tesselate( vertices.slice(startPoint).concat(vertices.slice(0,endPoint+1)), faceSink );
+            tesselate( vertices.slice(endPoint, startPoint+1 ), faceSink );
           } else {
-            tesselate( vertices.slice(startPoint, endPoint+1 ) );
-            tesselate( vertices.slice(endPoint).concat(vertices.slice(0,startPoint+1)) );
+            tesselate( vertices.slice(startPoint, endPoint+1 ), faceSink );
+            tesselate( vertices.slice(endPoint).concat(vertices.slice(0,startPoint+1)), faceSink );
           }
 
           return;
@@ -454,6 +503,7 @@ Renderer: FaceSink
   var all = {
       vadd:vadd, vsub:vsub, vscale:vscale, vdot:vdot, vcross: vcross, vlength:vlength, vnorm:vnorm,
       step:step,
+      Path:Path,
       Vertex:Vertex, vertices:vertices, parametric:parametric,
       translate:translate,
       skin:skin, facers:facers, closeEdge:closeEdge, capBottom:capBottom, capTop:capTop,
