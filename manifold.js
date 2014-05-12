@@ -410,12 +410,73 @@ Renderer: FaceSink
     })
 
     // tesselate 2d loop
+    console.log('tesslate 3d', vertices2d.map(function(v) { return [v.x,v.y].join(',')}))
     tesselateVertices( vertices2d, function(face) {
       faceSink([ points3d[face[0].id], points3d[face[1].id], points3d[face[2].id] ]);
     })
   }
 
+  /*
+   Better triangulation algorithm:
+   Monotone polygon - a polygon for which no vertical line passes through it more than twice.
+      Implemented as an upper and lower list of vertices.
+      Assume vertices are added from left to right.
+      addUpper v
+        while lower.length > 1
+          triangle(lower[0],v,lower[1])
+          lower = lower.slice(1)
+        if upper.length == 1 && angle(lower[0],upper[0],v) is convex
+          triangle(lower[0],upper[0],p)
+          upper = []
+        upper.push(v)
+
+      addLower v - similar but opposite
+
+      attemptAdd v
+        lastUpper = upper[upper.length-1]
+        nextUpper = vertices[lastUpper.index + 1]
+        lastUpper = upper[upper.length-1]
+        nextLower = vertices[lastLower.index + 1]
+        if v.index == nextUpper
+          addUpper v
+          return HANDLED
+        else if v.index == nextLower
+          addLower v
+          return HANDLED
+        else if aboveLine(v,lastUpper,nextUpper)
+          return ABOVE
+        else if belowLine(v,lastLower,nextLower)
+          return BELOW
+        return INSIDE
+
+      split v
+        next = MonotonePolygon()
+        for (vl in lower) next.addLower vl
+        next.addUpper v
+        lower = []
+        addLower v
+        return next
+
+
+    Triangulation algorithm:
+      Sort vertices from left to right.
+      monotonePolygons = []
+      for v in vertices
+        for poly in monotonePolygons
+          position = poly.attemptAdd v
+          if position != BELOW
+            break
+        if position == ABOVE
+          insert new monontonePolygon above
+        if position == BELOW
+          insert new monotonePolygon below
+        if position == INSIDE
+          insert poly.split(v) below
+
+   */
+
   function tesselateVertices(vertices, faceSink) {
+    console.log('tesslate', vertices.map(function(v) { return [v.x,v.y].join(',')}))
     if ( vertices.length < 3 ) return;
     if ( vertices.length < 4 ) return tesselateConvex(vertices, faceSink);
       
@@ -445,7 +506,7 @@ Renderer: FaceSink
         startPoint = i;
 
         for (var j=2, endPoint; j<vertices.length-1; j++) {
-        endPoint = j + startPoint;
+          endPoint = j + startPoint;
           if ( angle(left(endPoint),center(endPoint),right(endPoint)) <= 0 )
             break;
 
@@ -456,6 +517,7 @@ Renderer: FaceSink
         }
         
         endPoint = index(endPoint);
+        console.log('start end', startPoint,endPoint)
 
         var newShape, rest;
         if (endPoint < startPoint) {
@@ -467,16 +529,17 @@ Renderer: FaceSink
         }
 
         if ( ! isSelfIntersecting( vertices[startPoint], vertices[endPoint], rest.slice(1,rest.length-1) ) ) {
+          console.log('slice', [vertices[startPoint], vertices[endPoint]].map(function(v) { return [v.x,v.y].join(',')}))
           if ( Math.abs(endPoint- startPoint) <= 1 || Math.abs(endPoint- startPoint) >= vertices.length -1 ) {
             console.log("wrap around", startPoint, endPoint, vertices.length);
             return;
           }
           if (endPoint < startPoint) {
-            tesselate( vertices.slice(startPoint).concat(vertices.slice(0,endPoint+1)), faceSink );
-            tesselate( vertices.slice(endPoint, startPoint+1 ), faceSink );
+            tesselateVertices( vertices.slice(startPoint).concat(vertices.slice(0,endPoint+1)), faceSink );
+            tesselateVertices( vertices.slice(endPoint, startPoint+1 ), faceSink );
           } else {
-            tesselate( vertices.slice(startPoint, endPoint+1 ), faceSink );
-            tesselate( vertices.slice(endPoint).concat(vertices.slice(0,startPoint+1)), faceSink );
+            tesselateVertices( vertices.slice(startPoint, endPoint+1 ), faceSink );
+            tesselateVertices( vertices.slice(endPoint).concat(vertices.slice(0,startPoint+1)), faceSink );
           }
 
           return;
@@ -489,6 +552,7 @@ Renderer: FaceSink
   }
 
   function tesselateConvex(vertices, faceSink) {
+    console.log('tesselateConvex', vertices.map(function(v) { return [v.x,v.y].join(',')}))
     var ai = 0, bi=(vertices.length/3)|0, ci=(2*vertices.length/3)|0;
     var a = vertices[ai], b=vertices[bi], c=vertices[ci];
 
