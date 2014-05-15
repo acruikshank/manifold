@@ -395,6 +395,85 @@ Renderer: FaceSink
     return vsub( pTranslated, vscale( planeNormal, vdot( pTranslated, planeNormal )))
   }
 
+  function loop( vertices, index ) {
+    return vertices[ (index + vertices.length) % vertices.length ];
+  }
+
+  // TESSLATION
+
+  // Assume 2d with l2.x >= v.x >= l1.x
+  function vertexIsAboveLine( v, l1, l2 ) {
+    return (v[0] == l1[0] && v[1] > l1[1] && (l2[0] > l1[0] || v[1] > l2[1])) 
+          || (v[1]-l1[1])/(v[0]-l1[0]) > (l2[1]-l1[1])/(l2[0]-l1[0]);
+  }
+
+  function isConvex(v1, v2, v3) {
+    return vcross(vsub(v1,v2),vsub(v3,v2))[2] > 0;
+  }
+
+  function MonotonePolygon( lowerVertices ) {
+    var upper = [];
+    var lower = lowerVertices || [];
+
+    function addUpper( v, faceSink ) {
+      while ( upper.length > 1 && isConvex(upper[upper.length-2],upper[upper.length-1],v) )
+        faceSink( [upper[upper.length-2], upper.pop(), v] );
+
+      for (var i=0, vl1, vl2; vl1 = lower[i], vl2=lower[i+1]; i++)
+        faceSink( [vl1, v, vl2] );
+
+      upper.push(v);
+      lower = lower.slice(lower.length-1,lower.length);
+    }
+
+    function addLower( v, faceSink ) {
+      while ( lower.length > 1 && isConvex(v,lower[lower.length-1],lower[lower.length-2]) )
+        faceSink( [lower[lower.length-2], lower.pop(), v] );
+
+      for (var i=0, vl1, vl2; vl1 = upper[i], vl2=upper[i+1]; i++)
+        faceSink( [vl2, v, vl1] );
+
+      lower.push(v);
+      upper = upper.slice(upper.length-1,upper.length);
+    }
+
+    function attemptAdd( v, vertices, faceSink ) {
+      var vu1 = upper[upper.length-1];
+      var vu2 = loop( vertices, vu1.index+1 );
+      if ( v === vu2 ) {
+        addUpper( v, faceSink );
+        return "HANDLED";
+      }
+
+      var vl1 = lower[upper.length-1] || vu1;
+      var vl2 = loop( vertices, vl1.index - 1 );
+      if ( v === vl2 ) {
+        addLower( v, faceSink );
+        return "HANDLED";
+      }
+
+      if ( vertexIsAboveLine(v, vu1, vu2 ) )
+        return "ABOVE";
+      else if ( vertexIsAboveLine(v, vl1, vl2 ) )
+        return "INSIDE";
+      else
+        return "BELOW";
+    }
+
+    function split( v, faceSink ) {
+      var other = MonotonePolygon( lower );
+      addUpper( v, faceSink );
+
+      lower = [];
+      addLower( v, faceSink );
+
+      return other;
+    }
+
+    return { addUpper:addUpper, addlower:addLower, attemptAdd:attemptAdd, split:split };
+  }
+
+
   function tesselate( points3d, faceSink ) {
     // determine approximate plane through loop and map points onto it.
     var planeNormal = vnorm(loopMeanNormal(points3d));
@@ -410,11 +489,11 @@ Renderer: FaceSink
     })
 
     // tesselate 2d loop
-    console.log('tesslate 3d', vertices2d.map(function(v) { return [v.x,v.y].join(',')}))
     tesselateVertices( vertices2d, function(face) {
       faceSink([ points3d[face[0].id], points3d[face[1].id], points3d[face[2].id] ]);
     })
   }
+
 
   /*
    Better triangulation algorithm:
