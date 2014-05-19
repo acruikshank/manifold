@@ -281,7 +281,7 @@ Renderer: FaceSink
   function capBottom( faceSink ) {
     var rib = [];
     return function capBottomVertexSink( vertex ) {
-      if ( vertex.transformStep == 0 )
+      if ( vertex.transformStep === 0 )
         return rib.push(vertex);
 
       if (rib) {
@@ -427,7 +427,7 @@ Renderer: FaceSink
     return vcross(vsub(v1,v2),vsub(v3,v2))[2] > 0;
   }
 
-  function printVertex(v) { return '('+v.id+':'+v.x+','+v.y+')'}
+  function printVertex(v) { return '('+v.id+':'+v.x.toFixed(2)+','+v.y.toFixed(2)+','+v.z.toFixed(2)+')'}
 
   function MonotonePolygon( first, lowerVertices ) {
     var upper = first ? [first] : [];    
@@ -435,8 +435,10 @@ Renderer: FaceSink
     var mergePolygon;
 
     function addUpper( v, faceSink ) {
-      while ( upper.length > 1 && isConvex(upper[upper.length-2],upper[upper.length-1],v) )
-        faceSink( [upper[upper.length-2], upper.pop(), v] );
+      while ( upper.length > 1 && isConvex(upper[upper.length-2],upper[upper.length-1],v) ) {
+        faceSink( [v, upper[upper.length-2], upper[upper.length-2]] );
+        upper.pop();
+      }
 
       if (upper.length == 1 && lower.length && isConvex(lower[0],upper[0],v))
         faceSink( [lower[0], upper.pop(), v] );
@@ -449,8 +451,10 @@ Renderer: FaceSink
     }
 
     function addLower( v, faceSink ) {
-      while ( lower.length > 1 && isConvex(v,lower[lower.length-1],lower[lower.length-2]) )
-        faceSink( [lower[lower.length-2], lower.pop(), v] );
+      while ( lower.length > 1 && isConvex(v,lower[lower.length-1],lower[lower.length-2]) ) {
+        faceSink( [v, lower[lower.length-1], lower[lower.length-2]] );
+        lower.pop();
+      }
 
       if (upper.length && lower.length == 1 && isConvex(v,lower[0],upper[0]))
         faceSink( [lower.pop(), upper[0], v] );
@@ -559,6 +563,7 @@ Renderer: FaceSink
 
     // tesselate 2d loop
     tesselate2d( vertices2d, function(face) {
+      var v1 = points3d[face[2].id], v2 = points3d[face[1].id], v3 = points3d[face[0].id]
       faceSink([ points3d[face[2].id], points3d[face[1].id], points3d[face[0].id] ]);
     })
   }
