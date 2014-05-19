@@ -34,17 +34,11 @@
     (function(vertexSink) {
       return function(step) {
         M.Path([-10,-10,0])
-          .line([0,0,0])
-          .line([-10,10,0])
-          .line([10,10,0])
-          .line([10,-10,0])
-        /*
           .curve([[-20,0,0],[-10,10,0]])
-          .curve([[0,50,0],[0,00,0],[10,10,0]])
+          .curve([[0,50,0],[0,00,0],[10,10,0]], 1)
           .curve([[20,0,0],[10,-10,0]])
-          .curve([[0,-20,0],[-9.8,-10.1,0]])
-        */
-          .vertices(vertexSink, step, 0)
+          .curve([[0,-20,0],[-9.8,-10.1,0]], 1)
+          .vertices(vertexSink, step, 1000)
       }
     })(
   M.translate([[0,0,-10],[0,0,10]]) (

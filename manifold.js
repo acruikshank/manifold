@@ -21,6 +21,7 @@ Renderer: FaceSink
 */
 
 (function(context) {
+  var debug = false;
   /*
   // cube
   var renderer = ThreeJSRenderer();
@@ -102,6 +103,7 @@ Renderer: FaceSink
   }
 
   var pathIndex = 0;
+  
   function Path( start ) {
     var segments = [], points = [start], path = {}, totalWeight = 0;
 
@@ -184,7 +186,6 @@ Renderer: FaceSink
   function translate(translations) {
     return function( vertexSink ) {
       return function( vertex ) {
-        console.log(vertex)
         var tIndex = parseInt(vertex.transformStep * (translations.length-1))
         var translate = vertex.transformStep==1 ? 
           translations[tIndex] : 
@@ -213,13 +214,11 @@ Renderer: FaceSink
         var brVertex = lastRib[bIndex+1];
 
         if (nextRib.length) {
-          console.log('top face', blVertex.id, nextRib[nextRib.length-1].id, vertex.id)
           faceSink( [blVertex, nextRib[nextRib.length-1], vertex] );
         }
 
         while ( brVertex &&  vertex.ribStep > blVertex.ribStep + (brVertex.ribStep-blVertex.ribStep)/2 ) {
           faceSink( [blVertex, vertex, brVertex] );
-          console.log("face", blVertex.id, vertex.id, brVertex.id)
           blVertex = brVertex;
           brVertex = lastRib[++bIndex + 1];
         }
@@ -411,13 +410,19 @@ Renderer: FaceSink
     return vcross(vsub(v1,v2),vsub(v3,v2))[2] > 0;
   }
 
-  function MonotonePolygon( lowerVertices ) {
-    var upper = [];
+  function printVertex(v) { return '('+v.id+':'+v.x+','+v.y+')'}
+
+  function MonotonePolygon( first, lowerVertices ) {
+    var upper = first ? [first] : [];    
     var lower = lowerVertices || [];
+    var mergePolygon;
 
     function addUpper( v, faceSink ) {
       while ( upper.length > 1 && isConvex(upper[upper.length-2],upper[upper.length-1],v) )
         faceSink( [upper[upper.length-2], upper.pop(), v] );
+
+      if (upper.length == 1 && lower.length && isConvex(lower[0],upper[0],v))
+        faceSink( [lower[0], upper.pop(), v] );
 
       for (var i=0, vl1, vl2; vl1 = lower[i], vl2=lower[i+1]; i++)
         faceSink( [vl1, v, vl2] );
@@ -430,6 +435,9 @@ Renderer: FaceSink
       while ( lower.length > 1 && isConvex(v,lower[lower.length-1],lower[lower.length-2]) )
         faceSink( [lower[lower.length-2], lower.pop(), v] );
 
+      if (upper.length && lower.length == 1 && isConvex(v,lower[0],upper[0]))
+        faceSink( [lower.pop(), upper[0], v] );
+
       for (var i=0, vl1, vl2; vl1 = upper[i], vl2=upper[i+1]; i++)
         faceSink( [vl2, v, vl1] );
 
@@ -437,40 +445,84 @@ Renderer: FaceSink
       upper = upper.slice(upper.length-1,upper.length);
     }
 
+
+    function lastLower() {
+      return lower[lower.length-1] || upper[0]
+    }
+
+    function aboveBottom(v, vertices) {
+      var vl1 = lastLower();
+      var vl2 = loop( vertices, vl1.id - 1 );
+      return vertexIsAboveLine(v, vl1, vl2 )
+    }
+
+    function isBottom(v, vertices) {
+      return v === loop( vertices, lastLower().id - 1 );
+    }
+
+    function getUpper() { return upper; }
+    function getLower() { return lower; }
+
     function attemptAdd( v, vertices, faceSink ) {
+      if (debug)
+        console.log('vertex',v, upper.map(printVertex).join(','), lower.map(printVertex).join(','));
       var vu1 = upper[upper.length-1];
-      var vu2 = loop( vertices, vu1.index+1 );
-      if ( v === vu2 ) {
+      if ( ! vu1 ) {
         addUpper( v, faceSink );
-        return "HANDLED";
+        return "TOP";
       }
 
-      var vl1 = lower[upper.length-1] || vu1;
-      var vl2 = loop( vertices, vl1.index - 1 );
-      if ( v === vl2 ) {
+      var vu2 = loop( vertices, vu1.id+1 );
+      if ( v === vu2 ) {
+        addUpper( v, faceSink );
+        if (mergePolygon) {
+          mergePolygon.addUpper(v, faceSink);
+          upper = mergePolygon.getUpper();
+          lower = mergePolygon.getLower();
+          mergePolygon = null;
+        }
+        return isBottom(v,vertices) ? "DONE" : "TOP";
+      }
+
+      if ( mergePolygon ? mergePolygon.isBottom(v,vertices) : isBottom(v,vertices) ) {
         addLower( v, faceSink );
-        return "HANDLED";
+        if (mergePolygon) {
+          mergePolygon.addLower( v, faceSink );
+          mergePolygon = null;
+        }
+        var vl1 = lastLower();
+        var vl2 = loop( vertices, vl1.id - 1 );
+        return vl2.x >= vl1.x ? "BOTTOM" : "MERGE";
       }
 
       if ( vertexIsAboveLine(v, vu1, vu2 ) )
         return "ABOVE";
-      else if ( vertexIsAboveLine(v, vl1, vl2 ) )
+      else if ( mergePolygon ? mergePolygon.aboveBottom(v,vertices) : aboveBottom(v,vertices) )
         return "INSIDE";
       else
         return "BELOW";
     }
 
-    function split( v, faceSink ) {
-      var other = MonotonePolygon( lower );
-      addUpper( v, faceSink );
+    function merge( polygon ) {
+      mergePolygon = polygon;
+    }
 
-      lower = [];
+    function split( v, faceSink ) {
+      var other = mergePolygon || MonotonePolygon( null, lower.length ? [lastLower()] : [upper[0]] );
+      mergePolygon = null;
+
+      if (debug) {
+        console.log('SPLIT', upper.map(printVertex).join(','), lower.map(printVertex).join(','));
+        console.log('OTHER', other.getUpper().map(printVertex).join(','), other.getLower().map(printVertex).join(','))
+      }
+      other.addUpper( v, faceSink );
       addLower( v, faceSink );
 
       return other;
     }
 
-    return { addUpper:addUpper, addlower:addLower, attemptAdd:attemptAdd, split:split };
+    return { addUpper:addUpper, addLower:addLower, attemptAdd:attemptAdd, merge:merge, split:split,
+             isBottom:isBottom, aboveBottom:aboveBottom, getUpper:getUpper, getLower:getLower };
   }
 
 
@@ -489,166 +541,47 @@ Renderer: FaceSink
     })
 
     // tesselate 2d loop
-    tesselateVertices( vertices2d, function(face) {
-      faceSink([ points3d[face[0].id], points3d[face[1].id], points3d[face[2].id] ]);
+    tesselate2d( vertices2d, function(face) {
+      faceSink([ points3d[face[2].id], points3d[face[1].id], points3d[face[0].id] ]);
     })
   }
 
+  function tesselate2d( vertices, faceSink ) {
+    var sortedVertices = vertices.slice().sort(function(a,b) { return a.x - b.x || b.y - a.y; });
+    var monotones = [MonotonePolygon(sortedVertices[0])];
 
-  /*
-   Better triangulation algorithm:
-   Monotone polygon - a polygon for which no vertical line passes through it more than twice.
-      Implemented as an upper and lower list of vertices.
-      Assume vertices are added from left to right.
-      addUpper v
-        while lower.length > 1
-          triangle(lower[0],v,lower[1])
-          lower = lower.slice(1)
-        if upper.length == 1 && angle(lower[0],upper[0],v) is convex
-          triangle(lower[0],upper[0],p)
-          upper = []
-        upper.push(v)
-
-      addLower v - similar but opposite
-
-      attemptAdd v
-        lastUpper = upper[upper.length-1]
-        nextUpper = vertices[lastUpper.index + 1]
-        lastUpper = upper[upper.length-1]
-        nextLower = vertices[lastLower.index + 1]
-        if v.index == nextUpper
-          addUpper v
-          return HANDLED
-        else if v.index == nextLower
-          addLower v
-          return HANDLED
-        else if aboveLine(v,lastUpper,nextUpper)
-          return ABOVE
-        else if belowLine(v,lastLower,nextLower)
-          return BELOW
-        return INSIDE
-
-      split v
-        next = MonotonePolygon()
-        for (vl in lower) next.addLower vl
-        next.addUpper v
-        lower = []
-        addLower v
-        return next
-
-
-    Triangulation algorithm:
-      Sort vertices from left to right.
-      monotonePolygons = []
-      for v in vertices
-        for poly in monotonePolygons
-          position = poly.attemptAdd v
-          if position != BELOW
-            break
-        if position == ABOVE
-          insert new monontonePolygon above
-        if position == BELOW
-          insert new monotonePolygon below
-        if position == INSIDE
-          insert poly.split(v) below
-
-   */
-
-  function tesselateVertices(vertices, faceSink) {
-    console.log('tesslate', vertices.map(function(v) { return [v.x,v.y].join(',')}))
-    if ( vertices.length < 3 ) return;
-    if ( vertices.length < 4 ) return tesselateConvex(vertices, faceSink);
-      
-    // traveling in either direction, find the first negative vertex followed by a positive one.
-    // If there are no negative vertices, the shape is convex. Tesselate and return.
-    // Starting with the vertex after that, find the first negative vertex or the last vertext s.t.
-    //   the angle formed from it and the first two vertices is < π.
-    // Create two new sets of vertices, one containing all the vertices found above, and the
-    //   other containing the rest plus the first and last from above.
-    // The first set is convex, so pass it on to be tesselated.
-    // The second list is "less concave", because the points at the ends now have less negative angles.
-    // Recurse with the second list. 
-    function index(i) { return (i+vertices.length)%vertices.length;  }
-    function center(i) { return vertices[ i%vertices.length ] }
-    function left(i) { return vertices[ (i+vertices.length-1)%vertices.length ] }
-    function right(i) { return vertices[ (i+1)%vertices.length ] }
-    function angle(l,p,r) { return Math.atan2( 
-      (r.x-p.x)*(l.y-p.y) - (r.y-p.y)*(l.x-p.x),
-      (r.x-p.x)*(l.x-p.x) + (r.y-p.y)*(l.y-p.y)
-    ) }
-
-    var angles = vertices.map( function(p,i) { return angle(left(i),p,right(i)); })
-    
-    var startPoint;
-    for (var i=vertices.length-1; i>=0; i--) {
-      if ( angles[i] <= 0 && angles[index(i+1)] > 0 ) {
-        startPoint = i;
-
-        for (var j=2, endPoint; j<vertices.length-1; j++) {
-          endPoint = j + startPoint;
-          if ( angle(left(endPoint),center(endPoint),right(endPoint)) <= 0 )
-            break;
-
-          if ( angle(center(endPoint),center(startPoint), right(startPoint)) <= 0 ) {
-            endPoint = (endPoint+vertices.length-1) % vertices.length;
-            break;
-          }
-        }
-        
-        endPoint = index(endPoint);
-        console.log('start end', startPoint,endPoint)
-
-        var newShape, rest;
-        if (endPoint < startPoint) {
-          newShape = vertices.slice(startPoint).concat(vertices.slice(0,endPoint+1));
-          rest = vertices.slice(endPoint, startPoint+1);
-        } else {
-          newShape = vertices.slice(startPoint, endPoint+1);
-          rest = vertices.slice(endPoint).concat(vertices.slice(0,startPoint+1));
-        }
-
-        if ( ! isSelfIntersecting( vertices[startPoint], vertices[endPoint], rest.slice(1,rest.length-1) ) ) {
-          console.log('slice', [vertices[startPoint], vertices[endPoint]].map(function(v) { return [v.x,v.y].join(',')}))
-          if ( Math.abs(endPoint- startPoint) <= 1 || Math.abs(endPoint- startPoint) >= vertices.length -1 ) {
-            console.log("wrap around", startPoint, endPoint, vertices.length);
-            return;
-          }
-          if (endPoint < startPoint) {
-            tesselateVertices( vertices.slice(startPoint).concat(vertices.slice(0,endPoint+1)), faceSink );
-            tesselateVertices( vertices.slice(endPoint, startPoint+1 ), faceSink );
-          } else {
-            tesselateVertices( vertices.slice(startPoint, endPoint+1 ), faceSink );
-            tesselateVertices( vertices.slice(endPoint).concat(vertices.slice(0,startPoint+1)), faceSink );
-          }
-
-          return;
-        }
+    for (var i=1, v; v = sortedVertices[i]; i++) {
+      var result;
+      for (var j=0,mp; mp = monotones[j]; j++) {
+        result = mp.attemptAdd(v, vertices, faceSink);
+        if (result !== 'BELOW') break;
       }
-    }
-    
-    return tesselateConvex(vertices, faceSink);
-    
+      if (debug)
+        console.log( "TESSELATE", j, result )
+
+      if ( result === 'ABOVE' )
+        monotones.splice( j, 0, MonotonePolygon(v) );
+      else if ( result === 'INSIDE' )
+        monotones.splice( j+1, 0, mp.split(v, faceSink) );
+      else if ( result === 'BELOW' )
+        monotones.push( MonotonePolygon(v) );
+      else if ( result === 'MERGE' ) {
+        monotones[j+1].attemptAdd( v, vertices, faceSink );
+        monotones[j].merge(monotones[j+1])
+        monotones.splice(j+1,1)
+      } else if (result === 'DONE' )
+        monotones.splice(j, 1);
+    } 
   }
 
-  function tesselateConvex(vertices, faceSink) {
-    console.log('tesselateConvex', vertices.map(function(v) { return [v.x,v.y].join(',')}))
-    var ai = 0, bi=(vertices.length/3)|0, ci=(2*vertices.length/3)|0;
-    var a = vertices[ai], b=vertices[bi], c=vertices[ci];
 
-    faceSink( [c,b,a] );
-    
-    if (bi-ai > 1) tesselateConvex(vertices.slice(ai,bi+1), faceSink);
-    if (ci-bi > 1) tesselateConvex(vertices.slice(bi,ci+1), faceSink);
-    if (vertices.length-ci > 1) 
-      tesselateConvex(vertices.slice(ci,vertices.length).concat([a]), faceSink);
-  }
 
   var all = {
       vadd:vadd, vsub:vsub, vscale:vscale, vdot:vdot, vcross: vcross, vlength:vlength, vnorm:vnorm,
       step:step,
       Path:Path,
       Vertex:Vertex, vertices:vertices, parametric:parametric,
-      translate:translate,
+      translate:translate,MonotonePolygon:MonotonePolygon, tesselate2d:tesselate2d,
       skin:skin, facers:facers, closeEdge:closeEdge, capBottom:capBottom, capTop:capTop,
       reverse:reverse,
       ThreeJSRenderer:ThreeJSRenderer, STLRenderer:STLRenderer
