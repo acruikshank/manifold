@@ -30,25 +30,25 @@
   var threeGeometry = M.ThreeJSRenderer();
   var geometry = threeGeometry.geometry;
 
-  M.step(2) (
-    (function(vertexSink) {
-      return function(step) {
-        M.Path([-10,-10,0])
-          .curve([[-20,0,0],[-10,10,0]])
-          .curve([[0,50,0],[0,00,0],[10,10,0]], 1)
-          .curve([[20,0,0],[10,-10,0]])
-          .curve([[0,-20,0],[-9.8,-10.1,0]], 1)
-          .vertices(vertexSink, step, 1000)
-      }
-    })(
-  M.translate([[0,0,-10],[0,0,10]]) (
-  M.facers( M.skin, M.closeEdge, M.capBottom, M.capTop ) ( threeGeometry.renderer ))))
+  var vertexSink = M.facers( M.skin, M.capBottom, M.capTop ) ( threeGeometry.renderer );
+
+
+  var spine = M.Path([4,0,-10]).curve([[20,50,-2.5],[15,0,10]]);
+  M.PathParameterized(spine, 100, 200)(
+    function(profile) {
+      return M.Path([-10,-10,profile.z])
+        .curve([[-20,0,profile.z],[-10,10,profile.z]],1)
+        .spline([[0,profile.y,profile.z],[0,00,profile.z],[10,10,profile.z]], 2)
+        .spline([[profile.x,0,profile.z],[10,-10,profile.z]],1)
+        .spline([[0,-20,profile.z],[-10,-10,profile.z]],5)
+    })(vertexSink);
+
 
   geometry.computeBoundingSphere();
   geometry.computeFaceNormals();
 
 
-  mesh = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial( { color: '#ff0000' } ) );
+  mesh = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial( { color: '#ffffff' } ) );
   scene.add(mesh);
 
   function render( ) {
@@ -64,8 +64,8 @@
     document.body.appendChild( renderer.domElement );
 
     camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 1, 500 );
-    camera.position.y = -30;
-    camera.position.z = 30;
+    camera.position.y = -60;
+    camera.position.z = 60;
     camera.lookAt( new THREE.Vector3(0,0,0))
 
 
@@ -127,18 +127,9 @@
     var yRotation = (e.clientX) * Math.PI * 2 / document.body.offsetWidth;
     
     scene.remove(mesh);
-    mesh = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial( { color: '#ff0000' } ) );
+    mesh = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial( { color: '#ffffff' } ) );
     scene.add(mesh);
 
-    /*
-    geometry.applyMatrix( new THREE.Matrix4().makeRotationY(yRotation) );
-    geometry.applyMatrix( new THREE.Matrix4().makeRotationX(xRotation) );
-    geometry.verticesNeedUpdate = true;
-    geometry.computeBoundingSphere();
-    geometry.computeFaceNormals();
-    geometry.computeVertexNormals();
-    */
-//    mesh.applyMatrix(new THREE.Matrix4().identity())
     mesh.rotateOnAxis(new THREE.Vector3(0,1,0), yRotation);
     mesh.rotateOnAxis(new THREE.Vector3(1,0,0), xRotation);
 

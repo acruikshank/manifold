@@ -103,7 +103,7 @@ Renderer: FaceSink
   }
 
   var pathIndex = 0;
-  
+
   function Path( start ) {
     var segments = [], points = [start], path = {}, totalWeight = 0;
 
@@ -140,8 +140,9 @@ Renderer: FaceSink
 
       for (var i=0,s; s = segments[i]; i++) {
         var divisions = i >= segments.length - 1 ? remainingDivisions + 1 : (s.w * remainingDivisions / remainingWeight + 1)|0;
-        for (var j=0; j<divisions; j++)
+        for (var j=0; j<divisions; j++) {
           vertexSink( new Vertex(resolveCurve(points,j/divisions, s.s, s.o), step, (index++)/(allDivisions-1), pathIndex++) );
+        }
 
         remainingDivisions -= divisions - 1;
         remainingWeight -= s.w;
@@ -151,6 +152,17 @@ Renderer: FaceSink
     }
     
     return path;
+  }
+
+  // PATH PARAMETERIZED
+  function PathParameterized(path, transformSteps, ribSteps) {
+    return function(generator) {
+      return function(vertexSink) {
+        path.vertices(function(vertex) {
+          generator(vertex).vertices(vertexSink, vertex.ribStep, ribSteps);
+        }, 0, transformSteps);
+      }
+    }
   }
 
   // STEP
@@ -313,20 +325,25 @@ Renderer: FaceSink
   // RENDER
   function ThreeJSRenderer() {
     var geometry = new THREE.Geometry();
+    geometry._manifoldIdMap = {};
     return {
       renderer : function( face ) {
-        saveThreeJSVertex( geometry, face[0] );
-        saveThreeJSVertex( geometry, face[1] );
-        saveThreeJSVertex( geometry, face[2] );
-        geometry.faces.push( new THREE.Face3(face[0].id, face[1].id, face[2].id) );
+        var index0 = saveThreeJSVertex( geometry, face[0] );
+        var index1 = saveThreeJSVertex( geometry, face[1] );
+        var index2 = saveThreeJSVertex( geometry, face[2] );
+        geometry.faces.push( new THREE.Face3(index0, index1, index2) );
       },
       geometry: geometry
     }
   }
 
   function saveThreeJSVertex(geometry, vertex) {
-    if (! geometry.vertices[vertex.id])
-      geometry.vertices[vertex.id] = new THREE.Vector3( vertex[0], vertex[1], vertex[2] );
+    var location = geometry._manifoldIdMap[vertex.id];
+    if ( location == null ) {
+      location = geometry._manifoldIdMap[vertex.id] = geometry.vertices.length;
+      geometry.vertices.push( new THREE.Vector3( vertex[0], vertex[1], vertex[2] ) );
+    }
+    return location;
   }
 
   function STLRenderer(){
@@ -579,7 +596,7 @@ Renderer: FaceSink
   var all = {
       vadd:vadd, vsub:vsub, vscale:vscale, vdot:vdot, vcross: vcross, vlength:vlength, vnorm:vnorm,
       step:step,
-      Path:Path,
+      Path:Path, PathParameterized:PathParameterized,
       Vertex:Vertex, vertices:vertices, parametric:parametric,
       translate:translate,MonotonePolygon:MonotonePolygon, tesselate2d:tesselate2d,
       skin:skin, facers:facers, closeEdge:closeEdge, capBottom:capBottom, capTop:capTop,
