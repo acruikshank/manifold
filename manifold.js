@@ -49,6 +49,7 @@ Renderer: FaceSink
 
 
   */
+  var vertexId = 1;
 
   function Vertex( point, transformStep, ribStep, id) {
     this[0] = point[0];
@@ -56,7 +57,7 @@ Renderer: FaceSink
     this[2] = point[2];
     this[3] = transformStep;
     this[4] = ribStep;
-    this[5] = id;
+    this[5] = id == null ? ++vertexId : id;
   }
   Vertex.prototype = new Float64Array(6);
   Object.defineProperty(Vertex.prototype, 'x', {get:function() {return this[0]}, set:function(x) {this[0]=x}})
@@ -102,8 +103,6 @@ Renderer: FaceSink
     return vcross( vsub( p3, p2 ), vsub( p1, p2 ) );
   }
 
-  var pathIndex = 0;
-
   function Path( start ) {
     var segments = [], points = [start], path = {}, totalWeight = 0;
 
@@ -132,37 +131,28 @@ Renderer: FaceSink
       return path.curve( [ctl].concat(ps), weight);
     }
 
-    path.vertices = function(vertexSink, step, numVertices) {
-      var allDivisions = Math.max(numVertices, segments.length + 1);
-      var remainingDivisions = allDivisions - 1 - segments.length;
-      var remainingWeight = totalWeight;
-      var index = 0;
+    path.vertices = function(numVertices, step) {
+      return function(vertexSink) {
+        var allDivisions = Math.max(numVertices, segments.length + 1);
+        var remainingDivisions = allDivisions - 1 - segments.length;
+        var remainingWeight = totalWeight;
+        var index = 0;
 
-      for (var i=0,s; s = segments[i]; i++) {
-        var divisions = i >= segments.length - 1 ? remainingDivisions + 1 : (s.w * remainingDivisions / remainingWeight + 1)|0;
-        for (var j=0; j<divisions; j++) {
-          vertexSink( new Vertex(resolveCurve(points,j/divisions, s.s, s.o), step, (index++)/(allDivisions-1), pathIndex++) );
+        for (var i=0,s; s = segments[i]; i++) {
+          var divisions = i >= segments.length - 1 ? remainingDivisions + 1 : (s.w * remainingDivisions / remainingWeight + 1)|0;
+          for (var j=0; j<divisions; j++) {
+            vertexSink( new Vertex(resolveCurve(points,j/divisions, s.s, s.o), step, (index++)/(allDivisions-1)) );
+          }
+
+          remainingDivisions -= divisions - 1;
+          remainingWeight -= s.w;
         }
 
-        remainingDivisions -= divisions - 1;
-        remainingWeight -= s.w;
+        vertexSink( new Vertex(points[points.length-1], step, 1) );
       }
-
-      vertexSink( new Vertex(points[points.length-1], step, 1, pathIndex++) );
     }
     
     return path;
-  }
-
-  // PATH PARAMETERIZED
-  function PathParameterized(path, transformSteps, ribSteps) {
-    return function(generator) {
-      return function(vertexSink) {
-        path.vertices(function(vertex) {
-          generator(vertex).vertices(vertexSink, vertex.ribStep, ribSteps);
-        }, 0, transformSteps);
-      }
-    }
   }
 
   // STEP
@@ -172,24 +162,61 @@ Renderer: FaceSink
     }
   }
 
-  // VERTICES
+  // VERTEX GENERATORS
+
+  // Given a list of 3d points, generated a vertex for each point per step 
+  // (points need to be transformed)
   function vertices(points) {
     return function(vertexSink) {
-      var index = 0;
       return function(step) {
         for (var i=0,p; p=points[i]; i++)
-          vertexSink( new Vertex(p, step, i / (points.length-1), index++) );
+          vertexSink( new Vertex(p, step, i / (points.length-1)) );
       }
     }
   }
 
+  // Convert steps into vertices using a given function.
   function parametric(f, stepper) {
     return function(vertexSink) {
-      var index = 0;
       return function( transformStep ) {
         stepper( function(ribStep) {
-          vertexSink( new Vertex(f(ribStep, transformStep), transformStep, ribStep, index++) );
+          vertexSink( new Vertex(f(ribStep, transformStep), transformStep, ribStep) );
         })
+      }
+    }
+  }
+
+  // Convert a path into a manifold using a path generator function that converts vertices
+  // on the path into new paths.
+  function PathParameterized(path, transformSteps, ribSteps) {
+    return function(generator) {
+      return function(vertexSink) {
+        path.vertices(transformSteps, 0)(function(vertex) {
+          generator(vertex).vertices(ribSteps, vertex.ribStep)(vertexSink);
+        });
+      }
+    }
+  }
+
+  // Create a vertext generator that converts a single vertex into a circle of vertices
+  // such that the circle passes through the vertex and its center lies on the center normal.
+  function CircleRib( steps, centerNormal, centerOffset ) {
+    centerNormal = vnorm(centerNormal);
+    centerOffset = centerOffset || [0,0,0];
+    centerOffset = vsub(centerOffset, vscale(centerNormal, vdot(centerOffset,centerNormal)));
+    return function(vertexSink) {
+      return function(vertex) {
+        var center = vadd(vscale(centerNormal, vdot(centerNormal,vertex)), centerOffset);        
+        var a = vsub(vertex,center);
+        var radius = vlength(a);
+        if (radius === 0)
+          return vertexSink( new Vertex(center, vertex.ribStep, 1) );
+
+        var b = vcross(centerNormal,a);
+        for (var i=0; i<steps; i++) {
+          var point = vadd(vadd(vscale(a,Math.cos(2*i*Math.PI/(steps-1))),vscale(b,-Math.sin(2*i*Math.PI/(steps-1)))),center);
+          vertexSink( new Vertex(point, vertex.ribStep, i/(steps-1) ) );
+        }
       }
     }
   }
@@ -334,6 +361,21 @@ Renderer: FaceSink
         geometry.faces.push( new THREE.Face3(index0, index1, index2) );
       },
       geometry: geometry
+    }
+  }
+
+  function CSGRenderer() {
+    var polygons = [];
+    return {
+      renderer : function( face ) {
+        var faceNormal = vnorm(vcross(vsub(face[0],face[1]),vsub(face[2],face[1])));
+        var vertices = [ 
+          new CSG.Vertex( face[0], faceNormal ), 
+          new CSG.Vertex( face[1], faceNormal ), 
+          new CSG.Vertex( face[2], faceNormal )];
+        polygons.push( new CSG.Polygon( vertices ) );        
+      },
+      csgObject: function() { return CSG.fromPolygons(polygons); }
     }
   }
 
@@ -601,12 +643,12 @@ Renderer: FaceSink
   var all = {
       vadd:vadd, vsub:vsub, vscale:vscale, vdot:vdot, vcross: vcross, vlength:vlength, vnorm:vnorm,
       step:step,
-      Path:Path, PathParameterized:PathParameterized,
+      Path:Path, PathParameterized:PathParameterized, CircleRib:CircleRib,
       Vertex:Vertex, vertices:vertices, parametric:parametric,
       translate:translate,MonotonePolygon:MonotonePolygon, tesselate2d:tesselate2d,
       skin:skin, facers:facers, closeEdge:closeEdge, capBottom:capBottom, capTop:capTop,
       reverse:reverse,
-      ThreeJSRenderer:ThreeJSRenderer, STLRenderer:STLRenderer
+      ThreeJSRenderer:ThreeJSRenderer, CSGRenderer:CSGRenderer, STLRenderer:STLRenderer
   };
   for (var k in all) context[k] = all[k];
 
