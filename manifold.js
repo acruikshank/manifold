@@ -186,6 +186,15 @@ Renderer: FaceSink
     }
   }
 
+  // Simplifies step generators
+  function vertexGenerator( f ) {
+    return function(vertexSink) {
+      return function(step) {
+        f(step,vertexSink)
+      }
+    }
+  }
+
   // Convert a path into a manifold using a path generator function that converts vertices
   // on the path into new paths.
   function PathParameterized(path, transformSteps, ribSteps) {
@@ -214,7 +223,7 @@ Renderer: FaceSink
 
         var b = vcross(centerNormal,a);
         for (var i=0; i<steps; i++) {
-          var point = vadd(vadd(vscale(a,Math.cos(2*i*Math.PI/(steps-1))),vscale(b,-Math.sin(2*i*Math.PI/(steps-1)))),center);
+          var point = vadd(vadd(vscale(a,Math.cos(2*i*Math.PI/(steps))),vscale(b,-Math.sin(2*i*Math.PI/(steps)))),center);
           vertexSink( new Vertex(point, vertex.ribStep, i/(steps-1) ) );
         }
       }
@@ -478,7 +487,7 @@ Renderer: FaceSink
 
     function addUpper( v, faceSink ) {
       while ( upper.length > 1 && isConvex(upper[upper.length-2],upper[upper.length-1],v) ) {
-        faceSink( [v, upper[upper.length-2], upper[upper.length-2]] );
+        faceSink( [upper[upper.length-1], v, upper[upper.length-2]] );
         upper.pop();
       }
 
@@ -605,7 +614,6 @@ Renderer: FaceSink
 
     // tesselate 2d loop
     tesselate2d( vertices2d, function(face) {
-      var v1 = points3d[face[2].id], v2 = points3d[face[1].id], v3 = points3d[face[0].id]
       faceSink([ points3d[face[2].id], points3d[face[1].id], points3d[face[0].id] ]);
     })
   }
@@ -644,7 +652,7 @@ Renderer: FaceSink
       vadd:vadd, vsub:vsub, vscale:vscale, vdot:vdot, vcross: vcross, vlength:vlength, vnorm:vnorm,
       step:step,
       Path:Path, PathParameterized:PathParameterized, CircleRib:CircleRib,
-      Vertex:Vertex, vertices:vertices, parametric:parametric,
+      Vertex:Vertex, vertices:vertices, parametric:parametric, vertexGenerator:vertexGenerator,
       translate:translate,MonotonePolygon:MonotonePolygon, tesselate2d:tesselate2d,
       skin:skin, facers:facers, closeEdge:closeEdge, capBottom:capBottom, capTop:capTop,
       reverse:reverse,
