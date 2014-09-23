@@ -1,15 +1,4 @@
-<html>
-<head>
-<title>Path Geometry</title>
-  <style>
-    body { background: #fff;}
-  </style>
-  <script src="three.min.js"></script>
-  <script src="../manifold.js"></script>
-</head>
-<body>
-</body>
-  <script>
+function geometryViewer(geometrySource) {
   var camera, scene, renderer;
   var particleLight1, pointLight1;
   var particleLight2, pointLight2;
@@ -30,21 +19,7 @@
   var threeGeometry = M.ThreeJSRenderer();
   var geometry = threeGeometry.geometry;
 
-
-  var spine = M.Path([4,0,-10]).curve([[20,50,-2.5],[15,0,10]]);
-  M.PathParameterized(spine, 100, 200) 
-  ( function(profile) {
-      return M.Path([-10,-10,profile.z])
-        .curve([[-20,0,profile.z],[-10,10,profile.z]],1)
-        .spline([[0,profile.y,profile.z],[0,00,profile.z],[10,10,profile.z]], 2)
-        .spline([[profile.x,0,profile.z],[10,-10,profile.z]],1)
-        .spline([[0,-20,profile.z],[-10,-10,profile.z]],5);
-    } 
-  ) 
-  ( M.facers( M.skin, M.capBottom, M.capTop ) 
-    ( threeGeometry.renderer )
-  );
-
+  geometrySource(threeGeometry.renderer);
 
   geometry.computeBoundingSphere();
   geometry.computeFaceNormals();
@@ -54,7 +29,7 @@
   scene.add(mesh);
 
   function render( ) {
-    renderer.render( scene, camera );    
+    renderer.render( scene, camera );
   }
 
   render();
@@ -118,16 +93,16 @@
     renderer.render( scene, camera );
 
 
-    window.addEventListener( 'resize', onWindowResize, false );    
+    window.addEventListener( 'resize', onWindowResize, false );
   }
 
   function mousemove(e) {
     if (! dragging) return;
-    e.preventDefault(); 
+    e.preventDefault();
 
     var xRotation = -(e.clientY) * Math.PI * 2 / document.body.offsetHeight;
     var yRotation = (e.clientX) * Math.PI * 2 / document.body.offsetWidth;
-    
+
     scene.remove(mesh);
     mesh = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial( { color: '#ffffff' } ) );
     scene.add(mesh);
@@ -141,5 +116,4 @@
   document.body.onmousemove = mousemove;
   document.body.onmousedown = function(e) { e.preventDefault(); startMouse = {x:e.clientX,y:e.clientY}; dragging = true; }
   document.body.onmouseup = function(e) { mousemove(e); dragging = false; }
-
-  </script><html>
+}

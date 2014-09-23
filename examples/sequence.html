@@ -1,0 +1,54 @@
+<html>
+<head>
+<title>Basic Geometry</title>
+  <style>
+    body { background: #fff; margin:0;}
+  </style>
+  <script src="three.min.js"></script>
+  <script src="../manifold.js"></script>
+  <script src="geometry_viewer.js"></script>
+</head>
+<body>
+</body>
+  <script>
+  var M = manifold;
+
+  geometryViewer(function(renderer) {
+
+    function pathGenerator(profile) {
+     return M.Path(profile)
+      .line([profile.y,-profile.x,profile.z],1)
+      .line([-profile.x,-profile.y,profile.z],1)
+      .line([-profile.y,profile.x,profile.z],1)
+      .line(profile,1)
+    }
+
+    function CircleTransformer(vertexSink) {
+      var segments = [6,6,6,6,6,12,24,48,80];
+      return function( vertex ) {
+        M.CircleRib( segments[0], [0,0,1] )(vertexSink)(vertex);
+        if (segments.length>1) segments = segments.slice(1);
+      }
+    }
+
+    var spine = M.Path([10,0,0])
+      .line([10,0,2])
+      .line([10,0,2])
+      .curve([[8,4,2], [8,8,8], [3,3,32]], 5)
+      .line([4,0,32])
+      .line([6,0,0])
+
+    M.lift(spine.vertices(11,0))
+      .generate(
+        M.Sequencer([
+          [7, CircleTransformer],
+          [4, M.CircleRib(80,[0,0,1])]
+        ]),
+        M.facers( M.closeEdge, M.skin, M.capTube )
+      )
+      .render(renderer);
+
+
+  });
+
+  </script><html>

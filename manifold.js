@@ -6,7 +6,7 @@ StepSource: StepSink ->
 VertexSink: Vertex, Step, Step* ->
 VertexGenerator: VertexSink -> StepSink
   vertices(vertices) // take the given vertices to create a VertexGenerator
-  parametric(f): (Step -> Vertex) -> VertexGenerator // convert a vertex producer into a vertex generator 
+  parametric(f): (Step -> Vertex) -> VertexGenerator // convert a vertex producer into a vertex generator
 VertexMap: VertexSink -> VertexSink
   zTranslate(start,end): translate vertices along z axis
   zRotate(start*,end*): rotate vertices around z axis
@@ -48,6 +48,7 @@ Renderer: FaceSink
           face(connect:'tb', singular:'lr')( renderer ))))
 
 
+
   */
   var vertexId = 1;
 
@@ -64,14 +65,16 @@ Renderer: FaceSink
   Object.defineProperty(Vertex.prototype, 'y', {get:function() {return this[1]}, set:function(y) {this[1]=y}})
   Object.defineProperty(Vertex.prototype, 'z', {get:function() {return this[2]}, set:function(z) {this[2]=z}})
   Object.defineProperty(Vertex.prototype, 'transformStep', {
-    get:function() {return this[3]}, 
+    get:function() {return this[3]},
     set:function(transformStep) {this[3]=transformStep}})
   Object.defineProperty(Vertex.prototype, 'ribStep', {
-    get:function() {return this[4]}, 
+    get:function() {return this[4]},
     set:function(ribStep) {this[4]=ribStep}})
   Object.defineProperty(Vertex.prototype, 'id', {
-    get:function() {return this[5]}, 
+    get:function() {return this[5]},
     set:function(id) {this[5]=id}})
+  Vertex.prototype.toString = function() { return "Vertex("+this.id+") ["+this.x+","+this.y+","+this.z+"] "+
+                                                  this.transformStep+" "+this.ribStep };
 
 
   function resolveCurve( points, s, start, size ) {
@@ -97,7 +100,7 @@ Renderer: FaceSink
     size = size || points.length;
     if ( size < 3 ) return [0,0,0];
 
-    var p1 = resolveCurve( points, s, start, size-2 ), 
+    var p1 = resolveCurve( points, s, start, size-2 ),
         p2 = resolveCurve( points, s, start+1, size-2 ),
         p3 = resolveCurve( points, s, start+2, size-2 );
     return vcross( vsub( p3, p2 ), vsub( p1, p2 ) );
@@ -151,7 +154,24 @@ Renderer: FaceSink
         vertexSink( new Vertex(points[points.length-1], step, 1) );
       }
     }
-    
+
+    path.stepSink = function(transformStep) {
+      return function(vertexSink) {
+        return function(step) {
+          var remainingWeight = step;
+
+          for (var i=0,s; s = segments[i]; i++) {
+            var segmentWeight = s.w / totalWeight;
+            if (remainingWeight - segmentWeight <= 0.00001) {
+              return vertexSink( new Vertex(resolveCurve(points,remainingWeight, s.s, s.o), transformStep, step) );
+            } else {
+              remainingWeight -= segmentWeight;
+            }
+          }
+        }
+      }
+    }
+
     return path;
   }
 
@@ -162,9 +182,26 @@ Renderer: FaceSink
     }
   }
 
+  // LIFT
+
+  // Manage a series of geometry computations.
+  // lift should be called as
+  //   lift(source).generate(generator1,generator2,...).render(renderer)
+  // Where source is an ASink ->, a generator1 is BSink -> ASink, generator2 is CSink -> BSink, etc.
+  // and renderer is a FaceSink. The last generator argument must accept a FaceSink.
+  // Nothing will be executed until render is called.
+  function lift(source) { return {
+    generate: function() {
+      var generators = Array.prototype.slice.call(arguments,0); return {
+      render: function(renderer) {
+        source(generators.reverse().reduce(function(m,generator) { return generator(m); }, renderer));
+      } }
+    } }
+  }
+
   // VERTEX GENERATORS
 
-  // Given a list of 3d points, generated a vertex for each point per step 
+  // Given a list of 3d points, generated a vertex for each point per step
   // (points need to be transformed)
   function vertices(points) {
     return function(vertexSink) {
@@ -201,8 +238,59 @@ Renderer: FaceSink
     return function(generator) {
       return function(vertexSink) {
         path.vertices(transformSteps, 0)(function(vertex) {
-          generator(vertex).vertices(ribSteps, vertex.ribStep)(vertexSink);
+          generator(vertex).vertices(ribSteps,vertex.ribStep)(vertexSink);
         });
+      }
+    }
+  }
+
+  // Given a pathGenerator (Vertex -> Path), creates an Vertex -> VertexSink stream
+  // that generates that outputs ribSteps vertices along a each path generated from each
+  // input vertex.
+  // The transform step of each output vertex will be the rib step of each input vertex.
+  function VertexParameterizedPath(pathGenerator, ribSteps) {
+    return function(vertexSink) {
+      return function(vertex) {
+        pathGenerator(vertex).vertices(ribSteps,vertex.ribStep)(vertexSink);
+      }
+    }
+  }
+
+  // A vertex transformer that sequences a list of vertex transformers.
+  // Sequences look like:
+  // [[3, transformerA], [5, transformerB], ...]
+  // This will send the first 3 vertices from the sequencer source to transformerA, the
+  // next 5 vertices to transformer, etc. The ribStep of each input vertex will be put
+  // on the range [0 1] so that each transformer receives a full range over all of its
+  // steps. Each vertex emitted to the sequence's sink will have it's transform step
+  // translated using the opposite transform.
+  function Sequencer(sequence) {
+    return function(vertexSink) {
+
+      function mapTransformStep(vertex) {
+        vertex.transformStep = Math.min(1, step / (totalSteps-1) );
+        vertexSink( vertex );
+      }
+
+      sequence = sequence.map(function(s) { return [s[0], s[1]( mapTransformStep )]; });
+
+      var current = sequence[0];
+      var rest = sequence.slice(1);
+      var step = 0, sequenceStep = 0;
+      var totalSteps = sequence.reduce(function(m,s) {return s[0]+m;},0);
+
+      return function(vertex) {
+
+        while (current && step - sequenceStep > current[0]) {
+          sequenceStep += current[0];
+          current = rest.splice(0,1)[0];
+        }
+
+        if (current) {
+          var ribStep = current[0] == 1 ? 1 : (step - sequenceStep) / (current[0]-1);
+          current[1](new Vertex(vertex, vertex.transformStep, ribStep, vertex.id));
+          step++;
+        }
       }
     }
   }
@@ -215,7 +303,7 @@ Renderer: FaceSink
     centerOffset = vsub(centerOffset, vscale(centerNormal, vdot(centerOffset,centerNormal)));
     return function(vertexSink) {
       return function(vertex) {
-        var center = vadd(vscale(centerNormal, vdot(centerNormal,vertex)), centerOffset);        
+        var center = vadd(vscale(centerNormal, vdot(centerNormal,vertex)), centerOffset);
         var a = vsub(vertex,center);
         var radius = vlength(a);
         if (radius === 0)
@@ -224,7 +312,7 @@ Renderer: FaceSink
         var b = vcross(centerNormal,a);
         for (var i=0; i<steps; i++) {
           var point = vadd(vadd(vscale(a,Math.cos(2*i*Math.PI/(steps))),vscale(b,-Math.sin(2*i*Math.PI/(steps)))),center);
-          vertexSink( new Vertex(point, vertex.ribStep, i/(steps-1) ) );
+          vertexSink( new Vertex(point, vertex.ribStep, i/(steps-1)) );
         }
       }
     }
@@ -235,8 +323,8 @@ Renderer: FaceSink
     return function( vertexSink ) {
       return function( vertex ) {
         var tIndex = parseInt(vertex.transformStep * (translations.length-1))
-        var translate = vertex.transformStep==1 ? 
-          translations[tIndex] : 
+        var translate = vertex.transformStep==1 ?
+          translations[tIndex] :
           vinterp( translations[tIndex], translations[tIndex+1], vertex.transformStep-tIndex)
         vertexSink( new Vertex(vadd(translate,vertex), vertex.transformStep, vertex.ribStep, vertex.id ) );
       }
@@ -300,7 +388,7 @@ Renderer: FaceSink
           if ( topLastInRib && bottomLastInRib )
             faceSink( [bottomLastInRib, topLastInRib, topFirstInRib] );
 
-          if ( bottomLastInRib ) 
+          if ( bottomLastInRib )
             faceSink( [bottomLastInRib, topFirstInRib, bottomFirstInRib] );
           else if ( topLastInRib )
             faceSink( [bottomFirstInRib, topLastInRib, topFirstInRib] );
@@ -336,6 +424,85 @@ Renderer: FaceSink
 
       if (vertex.ribStep == 1)
         tesselate(rib, faceSink );
+    }
+  }
+
+  function capTube( faceSink ) {
+    var outerRib = [];
+    var innerRib = []
+    return function capBottomVertexSink( vertex ) {
+      if ( vertex.transformStep == 0 ) {
+        outerRib.push(vertex);
+      } else if ( vertex.transformStep == 1 ) {
+        innerRib.push(vertex);
+        if (vertex.ribStep == 1) {
+          outerRib.push(outerRib[0]);
+          innerRib.push(innerRib[0]);
+          innerRib.reverse();
+          tesselate( outerRib.concat(innerRib), reverseFaceSink(faceSink));
+        }
+      }
+    }
+  }
+
+  function capTubeBottom() {
+    var rib = [];
+    var op = outerManifoldStart;
+
+    return function( faceSink ) {
+      function outerManifoldStart(vertex) {
+        if ( vertex.transformStep > 0 ) return outerManifoldMid;
+        rib.push(vertex);
+        return outerManifoldStart;
+      }
+
+      function outerManifoldMid(vertex) {
+        return vertex.transformStep < 1 && vertex.ribStep < 1 ? outerManifoldMid : innerManifoldStart;
+      }
+
+      function innerManifoldStart(vertex) {
+        if ( vertex.transformStep > 0 ) {
+          tesselate(rib, faceSink );
+          return noop;
+        }
+        rib.push(vertex);
+        return outerManifoldStart;
+      }
+
+      function noop() { }
+
+      return function( vertex ) { op = op(vertex); }
+    }
+  }
+
+  function capTubeTop() {
+    var rib = [];
+    var op = outerManifoldStart;
+
+    return function( faceSink ) {
+      function outerManifoldStart(vertex) {
+        if ( vertex.transformStep < 1 ) return outerManifoldStart;
+        rib.push(vertex);
+        return outerManifoldEnd;
+      }
+
+      function outerManifoldEnd(vertex) {
+        rib.push(vertex);
+        if ( vertex.ribStep < 1 ) return outerManifoldEnd;
+        return innerManifoldStart;
+      }
+
+      function innerManifoldStart(vertex) {
+        rib.push(vertex);
+        if ( vertex.ribStep < 1 ) return innerManifoldStart;
+
+        tesselate(rib, faceSink );
+        return noop;
+      }
+
+      function noop() { }
+
+      return function( vertex ) { op = op(vertex); }
     }
   }
 
@@ -378,11 +545,11 @@ Renderer: FaceSink
     return {
       renderer : function( face ) {
         var faceNormal = vnorm(vcross(vsub(face[0],face[1]),vsub(face[2],face[1])));
-        var vertices = [ 
-          new CSG.Vertex( face[0], faceNormal ), 
-          new CSG.Vertex( face[1], faceNormal ), 
+        var vertices = [
+          new CSG.Vertex( face[0], faceNormal ),
+          new CSG.Vertex( face[1], faceNormal ),
           new CSG.Vertex( face[2], faceNormal )];
-        polygons.push( new CSG.Polygon( vertices ) );        
+        polygons.push( new CSG.Polygon( vertices ) );
       },
       csgObject: function() { return CSG.fromPolygons(polygons); }
     }
@@ -428,9 +595,9 @@ Renderer: FaceSink
 
   function vectorAverage(vs) { return vs.length ? vscale( vs.reduce(vadd,[0,0,0]), 1/vs.length ) : [0,0,0]; }
 
-  function loopMeanNormal(vs) { 
+  function loopMeanNormal(vs) {
     function v(i) { return vs[i%vs.length] }
-    return vectorAverage(vs.map(function(v0,i){return vcross(vsub(v0,v(i+1)), vsub(v(i+2), v(i+1)))})) 
+    return vectorAverage(vs.map(function(v0,i){return vcross(vsub(v0,v(i+1)), vsub(v(i+2), v(i+1)))}))
   }
 
   function intersect(v1, v2, v3, v4) {
@@ -470,7 +637,7 @@ Renderer: FaceSink
 
   // Assume 2d with l2.x >= v.x >= l1.x
   function vertexIsAboveLine( v, l1, l2 ) {
-    return (v[0] == l1[0] && v[1] > l1[1] && (l2[0] > l1[0] || v[1] > l2[1])) 
+    return (v[0] == l1[0] && v[1] > l1[1] && (l2[0] > l1[0] || v[1] > l2[1]))
           || (v[1]-l1[1])/(v[0]-l1[0]) > (l2[1]-l1[1])/(l2[0]-l1[0]);
   }
 
@@ -481,7 +648,7 @@ Renderer: FaceSink
   function printVertex(v) { return '('+v.id+':'+v.x.toFixed(2)+','+v.y.toFixed(2)+','+v.z.toFixed(2)+')'}
 
   function MonotonePolygon( first, lowerVertices ) {
-    var upper = first ? [first] : [];    
+    var upper = first ? [first] : [];
     var lower = lowerVertices || [];
     var mergePolygon;
 
@@ -643,18 +810,17 @@ Renderer: FaceSink
         monotones.splice(j+1,1)
       } else if (result === 'DONE' )
         monotones.splice(j, 1);
-    } 
+    }
   }
-
-
 
   var all = {
       vadd:vadd, vsub:vsub, vscale:vscale, vdot:vdot, vcross: vcross, vlength:vlength, vnorm:vnorm,
       step:step,
-      Path:Path, PathParameterized:PathParameterized, CircleRib:CircleRib,
+      Path:Path, PathParameterized:PathParameterized, VertexParameterizedPath:VertexParameterizedPath,
+      lift:lift, CircleRib:CircleRib, Sequencer:Sequencer,
       Vertex:Vertex, vertices:vertices, parametric:parametric, vertexGenerator:vertexGenerator,
       translate:translate,MonotonePolygon:MonotonePolygon, tesselate2d:tesselate2d,
-      skin:skin, facers:facers, closeEdge:closeEdge, capBottom:capBottom, capTop:capTop,
+      skin:skin, facers:facers, closeEdge:closeEdge, capBottom:capBottom, capTop:capTop, capTube:capTube,
       reverse:reverse,
       ThreeJSRenderer:ThreeJSRenderer, CSGRenderer:CSGRenderer, STLRenderer:STLRenderer
   };
