@@ -80,7 +80,7 @@ Renderer: FaceSink
   function resolveCurve( points, s, start, size ) {
     start = start || 0;
     size = size || points.length;
-    if ( size < 2 ) return points[start];
+    if ( isNaN(size) || size < 2 ) return points[start];
 
     var p1 = resolveCurve( points, s, start, size-1 ), p2 = resolveCurve( points, s, start+1, size-1 );
     return vadd( p1, vscale( vsub(p2, p1), s) );
@@ -104,6 +104,22 @@ Renderer: FaceSink
         p2 = resolveCurve( points, s, start+1, size-2 ),
         p3 = resolveCurve( points, s, start+2, size-2 );
     return vcross( vsub( p3, p2 ), vsub( p1, p2 ) );
+  }
+
+  function splitCurve( points, s, start, size ) {
+    start = start || 0;
+    size = size || points.length;
+
+    if ( size > 2 ) {
+      var side1 = splitCurve(points, s, start, size-1 )[0];
+      var side2 = splitCurve(points, s, start+1, size-1 )[1];
+    } else {
+      var side1 = [points[start]], side2 = [points[start+1]];
+    }
+
+    var p1 = side1[side1.length-1], p2 = side2[0];
+    var midpoint = [vadd( p1, vscale( vsub(p2, p1), s) )];
+    return [side1.concat(midpoint), midpoint.concat(side2)];
   }
 
   function Path( start ) {
@@ -134,6 +150,18 @@ Renderer: FaceSink
       return path.curve( [ctl].concat(ps), weight);
     }
 
+    // Given a control point and an end point, add a cubic bezier curve that
+    // approximates an arc of the circle that touches the current point and
+    // the end point such that the tangents at both those points intersect at
+    // the control point. This only works if the control point is equidistant
+    // from the start and end points. If it isn't, a new control point that is
+    // both equidistant and lies on the line between the start point and the
+    // given control point will be calculated.
+    path.arc = function(ctl, end, weight) {
+      var pts = arcToCubic(points[points.length-1], ctl, end);
+      return path.curve(pts.slice(1), weight);
+    }
+
     path.vertices = function(numVertices, step) {
       return function(vertexSink) {
         var allDivisions = Math.max(numVertices, segments.length + 1);
@@ -155,6 +183,78 @@ Renderer: FaceSink
       }
     }
 
+    path.startPoint = function() {
+      return points[0];
+    }
+
+    // the given visitor function ([point], Float ->) will be passed an array of control points
+    // and the weight for each segment in this path
+    path.visitSegments = function(visitor) {
+      for (var i=0, s; s = segments[i]; i++)
+        visitor(points.slice(s.s+1,s.s+s.o), s.w)
+    }
+
+    // Create a new curve formed from the start point and all the segments of this path, and
+    // the segments of the given path. The start point of the given path will be dropped.
+    path.concat = function(secondPath) {
+      var out = Path(points[0]);
+      path.visitSegments(out.curve);
+      secondPath.visitSegments(out.curve);
+      return out;
+    }
+
+    path.transform = function(pointTransform) {
+      var path = Path(pointTransform(points[0]));
+      for (var i=0, s; s = segments[i]; i++)
+        path = path.curve(points.slice(s.s+1,s.s+s.o).map(pointTransform),s.w);
+
+      return path;
+    }
+
+    path.reverse = function() {
+      var path = Path(points[points.length-1]);
+      for (var i=segments.length-1, s; s = segments[i]; i--)
+        path = path.curve(points.slice(s.s,s.s+s.o-1).reverse(),s.w);
+
+      return path;
+    }
+
+    path.split = function(step) {
+      var path1 = Path(points[0]);
+      for (var i=0, s, weight=0; s = segments[i]; i++) {
+        if ( (weight + s.w) / totalWeight >= step )
+          break;
+        path1 = path1.curve(points.slice(s.s+1,s.s+s.o),s.w);
+        weight += s.w;
+      }
+      var split = splitCurve( points, (step*totalWeight-weight) / s.w, s.s, s.o );
+      path1 = path1.curve( split[0].slice(1), step*totalWeight-weight );
+      var path2 = Path(split[1][0]).curve(split[1].slice(1), s.w - step*totalWeight + weight);
+
+      for (var j=i+1, s; s = segments[j]; j++)
+        path2 = path2.curve(points.slice(s.s+1,s.s+s.o),s.w);
+
+      return [path1,path2];
+    }
+
+    path.vertexAt = function(step) {
+      for (var i=0, s, weight=0; s = segments[i]; i++) {
+        if ( (weight + s.w) / totalWeight >= step )
+          break;
+        weight += s.w;
+      }
+      return new Vertex(resolveCurve( points, (step*totalWeight-weight) / s.w, s.s, s.o ), step, step );
+    }
+
+    path.tangentAt = function(step) {
+      for (var i=0, s, weight=0; s = segments[i]; i++) {
+        if ( (weight + s.w) / totalWeight >= step )
+          break;
+        weight += s.w;
+      }
+      return new Vertex(curveTangent( points, (step*totalWeight-weight) / s.w, s.s, s.o ), step, step );
+    }
+
     path.stepSink = function(transformStep) {
       return function(vertexSink) {
         return function(step) {
@@ -168,6 +268,31 @@ Renderer: FaceSink
               remainingWeight -= segmentWeight;
             }
           }
+        }
+      }
+    }
+
+    // Given a predicate (Vertex -> Bool), find the first point on the path such that the predicate takes
+    // different values on either side of it. The optional tolerance specifies how close (in parameter)
+    // space the returned point must be to the border. Supplying a divisions parameter will start the
+    // algorithm by dividing the curve that many times to avoid missing transitions (the default is 4).
+    // The transform and ribstep of the returned vertex (and each vertex supplied to the predicate) will
+    // be its parameter along the curve.
+    path.vertexBordering = function(predicate, tolerance, initialDivisions) {
+      tolerance = tolerance || .00001;
+      divisions = initialDivisions || 4;
+      var predicateValue = predicate(path.vertexAt(0));
+      var step = 1 / (divisions-1);
+      for (var parameter=0; parameter <= 1-step; parameter += step) {
+        var testVertex = path.vertexAt(parameter+step);
+        if (predicate(testVertex) != predicateValue) {
+          while (step > tolerance) {
+            step /= 2;
+            testVertex = path.vertexAt(parameter+step);
+            if (predicate(testVertex) == predicateValue)
+              parameter += step;
+          }
+          return testVertex;
         }
       }
     }
@@ -245,7 +370,7 @@ Renderer: FaceSink
   }
 
   // Given a pathGenerator (Vertex -> Path), creates an Vertex -> VertexSink stream
-  // that generates that outputs ribSteps vertices along a each path generated from each
+  // that generates ribSteps vertices along a each path generated from each
   // input vertex.
   // The transform step of each output vertex will be the rib step of each input vertex.
   function VertexParameterizedPath(pathGenerator, ribSteps) {
@@ -253,6 +378,43 @@ Renderer: FaceSink
       return function(vertex) {
         pathGenerator(vertex).vertices(ribSteps,vertex.ribStep)(vertexSink);
       }
+    }
+  }
+
+  // creates a VertexSource that, when Given a list of paths and a number of steps,
+  // emits a point on each path.
+  function PathSource(paths, steps) {
+    return function(vertexSink) {
+      for (var i=0, step=0; i < steps; i++, step=i/(steps-1)) {
+        for (var j=0, path; path=paths[j]; j++) {
+          var vertex = path.vertexAt( step );
+          vertex.transformStep = step;
+          vertex.ribStep = j / (paths.length - 1);
+          vertexSink( vertex );
+        }
+      }
+    }
+  }
+
+  // Given a list of paths, emit n lists of vertices along those paths, where n is
+  // the given number of steps ([Path] -> [Vertex]). The points on each path will
+  // be linearly spaced in parameter space (meaning curves will NOT be linearly spaced
+  // in 3d space). Both the transform and rib steps of each vertex will be the step
+  // parameter used to generate the vertex.
+  function RibTransform(paths, steps) {
+    return function(verticesSink) {
+      for (var i=0; i<steps; i++)
+        verticesSink( paths.map(function(path) { return path.vertexAt( i/(steps-1) ); }) )
+    }
+  }
+
+  // Given a rib transform ([Vertex] -> A) and a multi-vertex path Generator ([Vertex] -> Path),
+  // emit vertices for a manifold.
+  function RibParameterizedPath( ribTransform, pathGenerator, ribSteps ) {
+    return function(vertexSink) {
+      ribTransform( function(vertices) {
+        pathGenerator(vertices).vertices(ribSteps,vertices[0].ribStep)(vertexSink);
+      })
     }
   }
 
@@ -281,26 +443,49 @@ Renderer: FaceSink
 
       return function(vertex) {
 
-        while (current && step - sequenceStep > current[0]) {
+        while (current && step - sequenceStep >= current[0]) {
           sequenceStep += current[0];
           current = rest.splice(0,1)[0];
         }
 
         if (current) {
           var ribStep = current[0] == 1 ? 1 : (step - sequenceStep) / (current[0]-1);
-          current[1](new Vertex(vertex, vertex.transformStep, ribStep, vertex.id));
+          current[1](new Vertex(vertex, ribStep, vertex.ribStep));
           step++;
         }
       }
     }
   }
 
+  // Takes a list of weights and vertexSource and combines them into a single source.
+  // [[Float, vertexSink ->]] -> vertexSink
+  // The transform step of each source will be altered according to the weight given to
+  // each source. The sources are assumed to run synchronously.
+  // The spacing of the transform step is an optional second parameter.
+  function Stage(stages, spacing) {
+    var totalWeight = stages.reduce(function(m,stage) { return m+stage[0]; }, 0);
+    var spacing = spacing || totalWeight * .01;
+    totalWeight += spacing * (stages.length - 1);
+
+    return function(vertexSink) {
+      var cumulativeWeight = 0;
+      stages.forEach(function(stage) {
+        stage[1](function(vertex) {
+          vertex.transformStep = Math.min(1, (vertex.transformStep * stage[0] + cumulativeWeight) / totalWeight );
+          vertexSink(vertex);
+        })
+        cumulativeWeight += stage[0] + spacing;
+      });
+    }
+  }
+
   // Create a vertext generator that converts a single vertex into a circle of vertices
   // such that the circle passes through the vertex and its center lies on the center normal.
-  function CircleRib( steps, centerNormal, centerOffset ) {
+  function CircleRib( steps, centerNormal, centerOffset, phase ) {
     centerNormal = vnorm(centerNormal);
     centerOffset = centerOffset || [0,0,0];
     centerOffset = vsub(centerOffset, vscale(centerNormal, vdot(centerOffset,centerNormal)));
+    phase = phase || 0;
     return function(vertexSink) {
       return function(vertex) {
         var center = vadd(vscale(centerNormal, vdot(centerNormal,vertex)), centerOffset);
@@ -311,7 +496,7 @@ Renderer: FaceSink
 
         var b = vcross(centerNormal,a);
         for (var i=0; i<steps; i++) {
-          var point = vadd(vadd(vscale(a,Math.cos(2*i*Math.PI/(steps))),vscale(b,-Math.sin(2*i*Math.PI/(steps)))),center);
+          var point = vadd(vadd(vscale(a,Math.cos(phase+2*i*Math.PI/(steps))),vscale(b,-Math.sin(phase+2*i*Math.PI/(steps)))),center);
           vertexSink( new Vertex(point, vertex.ribStep, i/(steps-1)) );
         }
       }
@@ -326,7 +511,7 @@ Renderer: FaceSink
         var translate = vertex.transformStep==1 ?
           translations[tIndex] :
           vinterp( translations[tIndex], translations[tIndex+1], vertex.transformStep-tIndex)
-        vertexSink( new Vertex(vadd(translate,vertex), vertex.transformStep, vertex.ribStep, vertex.id ) );
+        vertexSink( new Vertex(vadd(translate,vertex), vertex.transformStep, vertex.ribStep ) );
       }
     }
   }
@@ -362,6 +547,26 @@ Renderer: FaceSink
 
       nextRib.push(vertex)
     }
+  }
+
+  function skinRibs( rib1, rib2, faceSink ) {
+    var bIndex = 0;
+    rib2.forEach(function(vertex,i) {
+      var blVertex = rib1[bIndex];
+      var brVertex = rib1[bIndex+1];
+
+      if (i>0 && rib2.length > i) {
+        console.log(printVertex(blVertex), printVertex(rib2[i-1]), printVertex(vertex))
+        faceSink( [blVertex, rib2[i-1], vertex] );
+      }
+
+      while ( brVertex &&  vertex.ribStep > blVertex.ribStep + (brVertex.ribStep-blVertex.ribStep)/2 ) {
+        faceSink( [blVertex, vertex, brVertex] );
+        console.log('while', printVertex(blVertex), printVertex(vertex), printVertex(brVertex))
+        blVertex = brVertex;
+        brVertex = rib1[++bIndex + 1];
+      }
+    })
   }
 
   function facers(facer1, facer2, etc) {
@@ -417,7 +622,7 @@ Renderer: FaceSink
 
   function capTop( faceSink ) {
     var rib = [];
-    return function capBottomVertexSink( vertex ) {
+    return function capTopVertexSink( vertex ) {
       if ( vertex.transformStep < 1 ) return;
 
       rib.push(vertex);
@@ -430,16 +635,25 @@ Renderer: FaceSink
   function capTube( faceSink ) {
     var outerRib = [];
     var innerRib = []
-    return function capBottomVertexSink( vertex ) {
+    return function capTubeVertexSink( vertex ) {
       if ( vertex.transformStep == 0 ) {
         outerRib.push(vertex);
       } else if ( vertex.transformStep == 1 ) {
         innerRib.push(vertex);
         if (vertex.ribStep == 1) {
+          // add outer rib point again to close path
           outerRib.push(outerRib[0]);
-          innerRib.push(innerRib[0]);
-          innerRib.reverse();
-          tesselate( outerRib.concat(innerRib), reverseFaceSink(faceSink));
+
+          // start inner rib at closest point
+          // var start = outerRib[0];
+          // var closest = innerRib.reduce(function(m,p,i) { return vdist(start,innerRib[m]) > vdist(start,p) ? i-1 : m; }, 0);
+          // innerRib = innerRib.slice(closest).concat( innerRib.slice(0,closest) );
+
+          // // add inner rib point again to close path
+          // innerRib.push(innerRib[0]);
+          // innerRib.reverse();
+          // tesselate( outerRib.concat(innerRib), reverseFaceSink(faceSink));
+          skinRibs( innerRib, outerRib, faceSink );
         }
       }
     }
@@ -504,6 +718,10 @@ Renderer: FaceSink
 
       return function( vertex ) { op = op(vertex); }
     }
+  }
+
+  function debugFacer( faceSink ) {
+    return function( vertex ) { console.log(vertexString(vertex), vertex.transformStep, vertex.ribStep); };
   }
 
   // FACER TRANSFORMS
@@ -590,10 +808,25 @@ Renderer: FaceSink
   function vdot(a,v) { return a[0]*v[0] + a[1]*v[1] + a[2]*v[2]; }
   function vcross(a,v) { return [a[1]*v[2] - a[2]*v[1], a[2]*v[0] - a[0]*v[2], a[0]*v[1] - a[1]*v[0]]; }
   function vlength(v) { return Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]); }
+  function vdist(a, v) { return vlength(vsub(a,v)); }
   function vnorm(v) { var l=vlength(v); return l > 0 ? [v[0]/l, v[1]/l, v[2]/l] : v; }
   function vinterp(a,b,c) { return vadd(a,vscale(vsub(b,a),c)); }
 
   function vectorAverage(vs) { return vs.length ? vscale( vs.reduce(vadd,[0,0,0]), 1/vs.length ) : [0,0,0]; }
+
+  var Q = {
+    quaternion : function(vec) { return [0, vec[0], vec[1], vec[2]]; },
+    rotation : function( a, vec ) { var a2=a/2, sina2=Math.sin(a2);
+               return [Math.cos(a2), vec[0]*sina2, vec[1]*sina2, vec[2]*sina2 ]; },
+    safeRotation : function( a, vec ) { return Q.rotation(a,vnorm( vec )); },
+    rotate : function( vec, rot ) { return Q.mul(Q.mul(rot,Q.quaternion(vec)),Q.conjugate(rot)).slice(1); },
+    conjugate : function(q) { return [q[0],-q[1],-q[2],-q[3]] },
+    mul : function(q1,q2) { return [
+          q1[0]*q2[0] - q1[1]*q2[1] - q1[2]*q2[2] - q1[3]*q2[3],
+          q1[0]*q2[1] + q1[1]*q2[0] - q1[2]*q2[3] + q1[3]*q2[2],
+          q1[0]*q2[2] + q1[1]*q2[3] + q1[2]*q2[0] - q1[3]*q2[1],
+          q1[0]*q2[3] - q1[1]*q2[2] + q1[2]*q2[1] + q1[3]*q2[0] ]; },
+  }
 
   function loopMeanNormal(vs) {
     function v(i) { return vs[i%vs.length] }
@@ -631,6 +864,42 @@ Renderer: FaceSink
 
   function loop( vertices, index ) {
     return vertices[ (index + vertices.length) % vertices.length ];
+  }
+
+  function arcToCubic(start, ctl, end) {
+    // find the control point equidstant between start and the end point.
+    var s = (2*vdot(start,end) - vdot(start,start) - vdot(end,end)) / (2*vdot(vsub(ctl,start), vsub(start,end)));
+    ctl = vadd(start, vscale(vsub(ctl,start), s) );
+
+    // cross the tangent lines to get a normal to the plane of the circle.
+    var planeNormal = vnorm(vcross(vsub(end,ctl), vsub(start,ctl)));
+
+    // cross each tangent with the normal to find the direction vectors from the points to the center.
+    var d1 = vnorm( vcross( planeNormal, vsub(ctl,start) ) );
+    var d2 = vnorm( vcross( planeNormal, vsub(end,ctl) ) );
+
+    // The intersection of the direction vectors gives the center.
+    s = vlength(vsub(end,start)) / vlength(vsub(d1,d2));
+    var center = vadd(start, vscale(d1,s));
+
+    // Cross the direction vectors to get the angle betwen the points
+    var angle = Math.asin(Math.min(1,vlength(vcross(d1,d2))));
+
+    // Compute length of ctl points (derived from http://itc.ktu.lt/itc354/Riskus354.pdf)
+    var cosa = Math.cos(angle/2);
+    var sina = Math.sin(angle/2);
+    var radius = vdist(start, center);
+    var ctlLength = radius * vlength([(4-cosa)/3 - cosa, (1-cosa)*(3-cosa)/(3*sina) - sina,0]);
+
+    // if angle > pi/2, invert ctlLength so control points keep getting longer
+    if (vdot(d1,d2) < 0)
+      ctlLength = radius*(8*(Math.sqrt(2)-1)/3) - ctlLength;
+
+    // control points on tangents, ctlLength away from start and end points
+    var ctl1 = vadd( start, vscale( vnorm(vsub(ctl,start)) ,ctlLength ) );
+    var ctl2 = vadd( end, vscale( vnorm(vsub(ctl,end)) ,ctlLength ) );
+
+    return [start, ctl1, ctl2, end];
   }
 
   // TESSLATION
@@ -815,15 +1084,16 @@ Renderer: FaceSink
 
   var all = {
       vadd:vadd, vsub:vsub, vscale:vscale, vdot:vdot, vcross: vcross, vlength:vlength, vnorm:vnorm,
-      step:step,
+      Q:Q, step:step,
       Path:Path, PathParameterized:PathParameterized, VertexParameterizedPath:VertexParameterizedPath,
-      lift:lift, CircleRib:CircleRib, Sequencer:Sequencer,
+      RibTransform:RibTransform, RibParameterizedPath:RibParameterizedPath, PathSource:PathSource,
+      lift:lift, CircleRib:CircleRib, Sequencer:Sequencer, Stage:Stage,
       Vertex:Vertex, vertices:vertices, parametric:parametric, vertexGenerator:vertexGenerator,
       translate:translate,MonotonePolygon:MonotonePolygon, tesselate2d:tesselate2d,
       skin:skin, facers:facers, closeEdge:closeEdge, capBottom:capBottom, capTop:capTop, capTube:capTube,
-      reverse:reverse,
+      debugFacer:debugFacer, reverse:reverse, arcToCubic:arcToCubic,
       ThreeJSRenderer:ThreeJSRenderer, CSGRenderer:CSGRenderer, STLRenderer:STLRenderer
   };
   for (var k in all) context[k] = all[k];
 
-})(typeof window != 'undefined' ? (window.manifold={}) : exports);
+})(typeof window != 'undefined' ? (window.manifold={}) : (typeof self != 'undefined' ? (self.manifold={}) : exports ));
