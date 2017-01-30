@@ -402,7 +402,7 @@ Renderer: FaceSink
     }
   }
 
-  // (Path) -> StepsSink -> TransformSink - Given a Path emit a tranform for
+  // (Path) -> StepsSink -> TransformSink - Given a Path emit a transform for
   // each input step that represents the translation and rotation of the path relative to its origin.
   function Extrude(path) {
     var lastTangent = vnorm(path.tangentAt(0));
@@ -435,7 +435,7 @@ Renderer: FaceSink
 
   // (Path) -> TransformSink -> VertexSink - Given a path, apply each transform to it
   // and emit as a rib.
-  function TranformPath(path, ribSteps) {
+  function TransformPath(path, ribSteps) {
     return function(vertexSink) {
       return function(transform, transformStep) {
         path.transform(transform).vertices(ribSteps || path.totalWeight(), transformStep)(vertexSink);
@@ -444,7 +444,7 @@ Renderer: FaceSink
   }
 
   // Given a path, a step based transform: Step -> (Vertex -> Vertex), and number of steps
-  // generate a manifold by creating a set of paths using the tranform and then creating
+  // generate a manifold by creating a set of paths using the transform and then creating
   // ribs from points along each of these paths (using PathSource).
   function RigidPathManifold(path, transformer, transformSteps, ribSteps) {
     for (var i=0, paths = []; i < ribSteps; i++)
@@ -1151,7 +1151,7 @@ Renderer: FaceSink
       vadd:vadd, vsub:vsub, vscale:vscale, vdot:vdot, vcross: vcross, vlength:vlength, vnorm:vnorm,
       Q:Q, step:step,
       Path:Path, PathParameterized:PathParameterized, VertexParameterizedPath:ParameterizedPath,
-      Extrude:Extrude, TranformPath:TranformPath,
+      Extrude:Extrude, TransformPath:TransformPath,
       ParameterizedPath: ParameterizedPath, RibTransform:RibTransform, RibParameterizedPath:RibParameterizedPath,
       PathSource:PathSource, RigidPathManifold: RigidPathManifold, Lathe:Lathe,
       lift:lift, CircleRib:CircleRib, Sequencer:Sequencer, Stage:Stage,

@@ -44,7 +44,7 @@
   M.lift(M.step(spine.totalWeight()))
     .generate(
       M.Extrude(spine),
-      M.TranformPath(path),
+      M.TransformPath(path),
       M.facers( M.skin, M.closeEdge, M.capBottom, M.capTop ))
     .render(threeGeometry.renderer);
 
