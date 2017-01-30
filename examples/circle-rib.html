@@ -1,10 +1,10 @@
 <html>
 <head>
-<title>Tube Path Geometry</title>
+<title>Lathe</title>
   <style>
-    body { background: #fff; margin:0;}
+    body { background: #fff;}
   </style>
-  <script src="three.min.js"></script>
+  <script src="../examples/three.min.js"></script>
   <script src="../manifold.js"></script>
 </head>
 <body>
@@ -30,23 +30,12 @@
   var threeGeometry = M.ThreeJSRenderer();
   var geometry = threeGeometry.geometry;
 
-  var spine = M.Path([20,0,0])
-    .line([14,0,20],10)
-    .line([12,0,20],1)
-    .line([10,0,0],10);
+  var spine = M.Path([0,0,-10]).curve([[4,0,-8],[15,0,-4]]).curve([[20,0,2.5],[4,0,8],[4,0,10]]).spline([[20,0,22],[0,0,30]]);
 
-  function circle(v) {
-    return M.Path([0,-v.x,v.z])
-      .arc([-v.x, -v.x, v.z], [-v.x, 0, v.z])
-      .arc([-v.x, v.x, v.z], [0, v.x, v.z])
-      .arc([v.x, v.x, v.z], [v.x, 0, v.z])
-      .arc([v.x, -v.x, v.z], [0, -v.x, v.z])
-  }
-
-  M.lift(spine.vertices(4,0))
+  M.lift(spine.vertices( 100 ))
     .generate(
-      M.VertexParameterizedPath(circle, 400),
-      M.facers( M.skin, M.closeEdge, M.capTube ))
+      M.CircleRib(100, [0,0,1]),
+      M.facers( M.skin, M.closeEdge, M.capBottom, M.capTop ))
     .render(threeGeometry.renderer);
 
   geometry.computeBoundingSphere();

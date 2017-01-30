@@ -1,6 +1,6 @@
 <html>
 <head>
-<title>Tube Path Geometry</title>
+<title>Extrude Geometry</title>
   <style>
     body { background: #fff; margin:0;}
   </style>
@@ -30,23 +30,22 @@
   var threeGeometry = M.ThreeJSRenderer();
   var geometry = threeGeometry.geometry;
 
-  var spine = M.Path([20,0,0])
-    .line([14,0,20],10)
-    .line([12,0,20],1)
-    .line([10,0,0],10);
+  var spine = M.Path([0,0,0])
+    .line([0,0,10])
+    .curve([[0,0,30],[0,-20,30]],20)
+    .arc([0,-40,30],[20,-40,30],20)
+    .arc([40,-40,30],[40,-20,30],20)
+    .curve([[40,0,30],[40,0,0]],20)
+    .arc([40,0,-10],[30,0,-10],20)
+    .arc([20,0,-10],[20,0,0],20)
 
-  function circle(v) {
-    return M.Path([0,-v.x,v.z])
-      .arc([-v.x, -v.x, v.z], [-v.x, 0, v.z])
-      .arc([-v.x, v.x, v.z], [0, v.x, v.z])
-      .arc([v.x, v.x, v.z], [v.x, 0, v.z])
-      .arc([v.x, -v.x, v.z], [0, -v.x, v.z])
-  }
+  var path = M.Path([3,3,0]).line([3,-3,0]).line([-3,-3,0]).line([-3,3,0])
 
-  M.lift(spine.vertices(4,0))
+  M.lift(M.step(spine.totalWeight()))
     .generate(
-      M.VertexParameterizedPath(circle, 400),
-      M.facers( M.skin, M.closeEdge, M.capTube ))
+      M.Extrude(spine),
+      M.TranformPath(path),
+      M.facers( M.skin, M.closeEdge, M.capBottom, M.capTop ))
     .render(threeGeometry.renderer);
 
   geometry.computeBoundingSphere();

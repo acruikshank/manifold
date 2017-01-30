@@ -1,6 +1,6 @@
 <html>
 <head>
-<title>Tube Path Geometry</title>
+<title>Lathe Geometry</title>
   <style>
     body { background: #fff; margin:0;}
   </style>
@@ -30,23 +30,16 @@
   var threeGeometry = M.ThreeJSRenderer();
   var geometry = threeGeometry.geometry;
 
-  var spine = M.Path([20,0,0])
-    .line([14,0,20],10)
-    .line([12,0,20],1)
-    .line([10,0,0],10);
+  var spine = M.Path([0,15,0])
+    .curve([[5,0,0],[20,0,0]],10)
+    .curve([[25,0,0], [25,5,0]], 10)
+    .curve([[25,10,0], [20,10,0]], 10)
+    .curve([[15,10,0], [15,5,0], [10,5,0]], 10)
+    .curve([[5,5,0], [5,10,0]], 10)
+    .curve([[5,15,0], [0,23,0]], 10)
 
-  function circle(v) {
-    return M.Path([0,-v.x,v.z])
-      .arc([-v.x, -v.x, v.z], [-v.x, 0, v.z])
-      .arc([-v.x, v.x, v.z], [0, v.x, v.z])
-      .arc([v.x, v.x, v.z], [v.x, 0, v.z])
-      .arc([v.x, -v.x, v.z], [0, -v.x, v.z])
-  }
-
-  M.lift(spine.vertices(4,0))
-    .generate(
-      M.VertexParameterizedPath(circle, 400),
-      M.facers( M.skin, M.closeEdge, M.capTube ))
+  M.lift(M.Lathe(spine, [0,1,0], [0,0,0], 200, 500))
+    .generate(M.facers( M.skin, M.closeEdge, M.capBottom, M.capTop ))
     .render(threeGeometry.renderer);
 
   geometry.computeBoundingSphere();

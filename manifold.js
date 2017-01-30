@@ -273,8 +273,8 @@ Renderer: FaceSink
     }
 
     // Given a predicate (Vertex -> Bool), find the first point on the path such that the predicate takes
-    // different values on either side of it. The optional tolerance specifies how close (in parameter)
-    // space the returned point must be to the border. Supplying a divisions parameter will start the
+    // different values on either side of it. The optional tolerance specifies how close (in parameter
+    // space) the returned point must be to the border. Supplying a divisions parameter will start the
     // algorithm by dividing the curve that many times to avoid missing transitions (the default is 4).
     // The transform and ribstep of the returned vertex (and each vertex supplied to the predicate) will
     // be its parameter along the curve.
@@ -296,6 +296,8 @@ Renderer: FaceSink
         }
       }
     }
+
+    path.totalWeight = function() { return totalWeight }
 
     return path;
   }
@@ -326,7 +328,7 @@ Renderer: FaceSink
 
   // VERTEX GENERATORS
 
-  // Given a list of 3d points, generated a vertex for each point per step
+  // Given a list of 3d points, repeat the list of points as vertices for each point per step
   // (points need to be transformed)
   function vertices(points) {
     return function(vertexSink) {
@@ -337,7 +339,8 @@ Renderer: FaceSink
     }
   }
 
-  // Convert steps into vertices using a given function.
+  // Given a function from Step, Step -> Vertex, and a stepper, run the stepper for each transform step
+  // and use f to transform these steps to vertices.
   function parametric(f, stepper) {
     return function(vertexSink) {
       return function( transformStep ) {
@@ -369,11 +372,13 @@ Renderer: FaceSink
     }
   }
 
-  // Given a pathGenerator (Vertex -> Path), creates an Vertex -> VertexSink stream
+  // Given a pathGenerator (Vertex -> Path), creates a Vertex -> VertexSink stream
   // that generates ribSteps vertices along a each path generated from each
   // input vertex.
+  // This function is actually slightly more general. The generator can be A -> Path,
+  // So that the output of any preceeding operation can be used to parameterize the path.
   // The transform step of each output vertex will be the rib step of each input vertex.
-  function VertexParameterizedPath(pathGenerator, ribSteps) {
+  function ParameterizedPath(pathGenerator, ribSteps) {
     return function(vertexSink) {
       return function(vertex) {
         pathGenerator(vertex).vertices(ribSteps,vertex.ribStep)(vertexSink);
@@ -381,8 +386,9 @@ Renderer: FaceSink
     }
   }
 
-  // creates a VertexSource that, when Given a list of paths and a number of steps,
-  // emits a point on each path.
+  // creates a VertexSource that, when given a list of paths and a number of steps,
+  // emits a vertex at the start of each path, then a vertex some fraction along each path
+  // and so on until the number of steps have been emitted along each path.
   function PathSource(paths, steps) {
     return function(vertexSink) {
       for (var i=0, step=0; i < steps; i++, step=i/(steps-1)) {
@@ -394,6 +400,67 @@ Renderer: FaceSink
         }
       }
     }
+  }
+
+  // (Path) -> StepsSink -> TransformSink - Given a Path emit a tranform for
+  // each input step that represents the translation and rotation of the path relative to its origin.
+  function Extrude(path) {
+    var lastTangent = vnorm(path.tangentAt(0));
+    var lastPoint = path.vertexAt(0);
+    var initialPoint = lastPoint;
+    var rotation = Q.quaternion([0,0,1]);
+    return function(transformSink) {
+      return function(step) {
+        var v = path.vertexAt(step);
+        var translate = vsub(v,initialPoint);
+        var currentTangent = vnorm(path.tangentAt(step));
+        var cross = vcross(lastTangent, currentTangent);
+        var rotationAngle = vlength(cross);
+        if (vdot(lastTangent, currentTangent) < 0)
+          rotationAngle = Math.PI - rotationAngle;
+        if (rotationAngle > Math.PI - .00000001)
+          rotationAngle = Math.PI - .000000001;
+        rotation = Q.mul(Q.rotation(-rotationAngle, vnorm(cross)), rotation)
+
+        lastTangent = currentTangent;
+        lastPoint = v;
+
+        transformSink(function t(p) {
+          var rotated = rotation ? Q.rotate(p, rotation) : p;
+          return vadd(rotated, translate);
+        }, step);
+      }
+    }
+  }
+
+  // (Path) -> TransformSink -> VertexSink - Given a path, apply each transform to it
+  // and emit as a rib.
+  function TranformPath(path, ribSteps) {
+    return function(vertexSink) {
+      return function(transform, transformStep) {
+        path.transform(transform).vertices(ribSteps || path.totalWeight(), transformStep)(vertexSink);
+      }
+    }
+  }
+
+  // Given a path, a step based transform: Step -> (Vertex -> Vertex), and number of steps
+  // generate a manifold by creating a set of paths using the tranform and then creating
+  // ribs from points along each of these paths (using PathSource).
+  function RigidPathManifold(path, transformer, transformSteps, ribSteps) {
+    for (var i=0, paths = []; i < ribSteps; i++)
+      paths.push(path.transform(transformer(i/ribSteps)));
+    return PathSource(paths, transformSteps);
+  }
+
+  // Create a manifold vertex generator by rotating a path around a normal at a given offset
+  function Lathe( path, normal, offset, transformSteps, ribSteps ) {
+    function transform(step) {
+      var angle = step * 2 * Math.PI, rotation = M.Q.safeRotation( angle, normal );
+      return function(vertex) {
+        return M.vadd( M.Q.rotate( M.vsub(vertex, offset), rotation ), offset );
+      }
+    }
+    return M.RigidPathManifold(path, transform, transformSteps, ribSteps)
   }
 
   // Given a list of paths, emit n lists of vertices along those paths, where n is
@@ -556,13 +623,11 @@ Renderer: FaceSink
       var brVertex = rib1[bIndex+1];
 
       if (i>0 && rib2.length > i) {
-        console.log(printVertex(blVertex), printVertex(rib2[i-1]), printVertex(vertex))
         faceSink( [blVertex, rib2[i-1], vertex] );
       }
 
       while ( brVertex &&  vertex.ribStep > blVertex.ribStep + (brVertex.ribStep-blVertex.ribStep)/2 ) {
         faceSink( [blVertex, vertex, brVertex] );
-        console.log('while', printVertex(blVertex), printVertex(vertex), printVertex(brVertex))
         blVertex = brVertex;
         brVertex = rib1[++bIndex + 1];
       }
@@ -1085,8 +1150,10 @@ Renderer: FaceSink
   var all = {
       vadd:vadd, vsub:vsub, vscale:vscale, vdot:vdot, vcross: vcross, vlength:vlength, vnorm:vnorm,
       Q:Q, step:step,
-      Path:Path, PathParameterized:PathParameterized, VertexParameterizedPath:VertexParameterizedPath,
-      RibTransform:RibTransform, RibParameterizedPath:RibParameterizedPath, PathSource:PathSource,
+      Path:Path, PathParameterized:PathParameterized, VertexParameterizedPath:ParameterizedPath,
+      Extrude:Extrude, TranformPath:TranformPath,
+      ParameterizedPath: ParameterizedPath, RibTransform:RibTransform, RibParameterizedPath:RibParameterizedPath,
+      PathSource:PathSource, RigidPathManifold: RigidPathManifold, Lathe:Lathe,
       lift:lift, CircleRib:CircleRib, Sequencer:Sequencer, Stage:Stage,
       Vertex:Vertex, vertices:vertices, parametric:parametric, vertexGenerator:vertexGenerator,
       translate:translate,MonotonePolygon:MonotonePolygon, tesselate2d:tesselate2d,
